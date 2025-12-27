@@ -2,6 +2,7 @@
     "name": "ezappslab/laravel-dominion",
     "description": "Laravel package for roles and permissions",
     "type": "library",
+    "version": "0.1.0",
     "license": "MIT",
     "autoload": {
         "psr-4": {
