@@ -1,8 +1,8 @@
 {
     "name": "ezappslab/laravel-dominion",
-    "description": "Laravel package for roles and permissions",
+    "description": "Laravel Dominion is a comprehensive authorization package for Laravel that provides tenant-aware, polymorphic roles and permissions. It is designed for applications that require fine-grained access control across multiple tenants while maintaining a clean, developer-friendly API.",
     "type": "library",
-    "version": "0.1.0",
+    "version": "0.3.0",
     "license": "MIT",
     "autoload": {
         "psr-4": {
