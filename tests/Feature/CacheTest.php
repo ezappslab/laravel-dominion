@@ -37,6 +37,23 @@ it('caches authorization results', function (): void {
     expect($queries)->toBeEmpty();
 });
 
+it('resolves a cold authorization decision with one database query', function (): void {
+    $user = User::create([
+        'name' => 'John Doe',
+        'email' => 'john@example.com',
+        'password' => Hash::make('password'),
+    ]);
+    Permission::create(['name' => 'posts.edit']);
+
+    DB::enableQueryLog();
+    $decision = $user->hasPermission('posts.edit');
+    $queries = DB::getQueryLog();
+    DB::disableQueryLog();
+
+    expect($decision)->toBeFalse()
+        ->and($queries)->toHaveCount(1);
+});
+
 it('invalidates cache when role is added', function (): void {
     $user = User::create([
         'name' => 'John Doe',

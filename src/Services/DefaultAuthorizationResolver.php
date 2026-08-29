@@ -3,7 +3,6 @@
 namespace Infinity\Dominion\Services;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
 use Infinity\Dominion\Contracts\AuthorizationCache;
 use Infinity\Dominion\Contracts\AuthorizationCatalog;
 use Infinity\Dominion\Contracts\AuthorizationResolver;
@@ -53,54 +52,51 @@ class DefaultAuthorizationResolver implements AuthorizationResolver
     protected function resolve(Model $principal, string $permission, AuthorizationScope $scope): AuthorizationDecision
     {
         $permissionModel = $this->models->permissionModel();
-        $permissionId = $permissionModel::query()->where('name', $permission)->value('id');
-
-        if ($permissionId === null) {
-            return AuthorizationDecision::Abstain;
-        }
-
+        $model = new $permissionModel;
+        $connection = $model->getConnection();
+        $permissionTable = $model->getTable();
         $identity = [
             'principal_type' => $principal->getMorphClass(),
             'principal_id' => $principal->getKey(),
         ];
         $scopeKeys = $this->scopeKeys($scope);
-
-        if ($this->assignmentExists('permission_denials', $identity, $scopeKeys, 'permission_id', $permissionId)) {
-            return AuthorizationDecision::Deny;
-        }
-
-        if ($this->assignmentExists('permission_grants', $identity, $scopeKeys, 'permission_id', $permissionId)) {
-            return AuthorizationDecision::Allow;
-        }
-
-        $rolePermission = DB::table('role_assignments')
+        $known = $connection->table($permissionTable)
+            ->selectRaw('0 as precedence')
+            ->where("{$permissionTable}.name", $permission);
+        $denials = $connection->table('permission_denials')
+            ->join($permissionTable, "{$permissionTable}.id", '=', 'permission_denials.permission_id')
+            ->selectRaw('3 as precedence')
+            ->where($identity)
+            ->whereIn('permission_denials.scope_key', $scopeKeys)
+            ->where("{$permissionTable}.name", $permission);
+        $grants = $connection->table('permission_grants')
+            ->join($permissionTable, "{$permissionTable}.id", '=', 'permission_grants.permission_id')
+            ->selectRaw('2 as precedence')
+            ->where($identity)
+            ->whereIn('permission_grants.scope_key', $scopeKeys)
+            ->where("{$permissionTable}.name", $permission);
+        $roles = $connection->table('role_assignments')
             ->join('permission_role', 'permission_role.role_id', '=', 'role_assignments.role_id')
+            ->join($permissionTable, "{$permissionTable}.id", '=', 'permission_role.permission_id')
+            ->selectRaw('1 as precedence')
             ->where($identity)
             ->whereIn('role_assignments.scope_key', $scopeKeys)
-            ->where('permission_role.permission_id', $permissionId)
-            ->exists();
+            ->where("{$permissionTable}.name", $permission);
 
-        return $rolePermission ? AuthorizationDecision::Allow : AuthorizationDecision::Deny;
-    }
+        $precedence = $connection->query()
+            ->fromSub($known->unionAll($denials)->unionAll($grants)->unionAll($roles), 'authorization_effects')
+            ->max('precedence');
 
-    /**
-     * Determine whether a matching scoped assignment exists.
-     *
-     * @param  array{principal_type: string, principal_id: mixed}  $identity
-     * @param  list<string>  $scopeKeys
-     */
-    protected function assignmentExists(
-        string $table,
-        array $identity,
-        array $scopeKeys,
-        string $foreignKey,
-        mixed $foreignId,
-    ): bool {
-        return DB::table($table)
-            ->where($identity)
-            ->whereIn('scope_key', $scopeKeys)
-            ->where($foreignKey, $foreignId)
-            ->exists();
+        if ($precedence === null) {
+            return AuthorizationDecision::Abstain;
+        }
+
+        return match ((int) $precedence) {
+            3 => AuthorizationDecision::Deny,
+            2, 1 => AuthorizationDecision::Allow,
+            0 => AuthorizationDecision::Deny,
+            default => AuthorizationDecision::Deny,
+        };
     }
 
     /**

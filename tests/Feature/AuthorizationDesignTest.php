@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
+use Infinity\Dominion\Contracts\AuthorizationCache;
 use Infinity\Dominion\Contracts\TenantContext;
 use Infinity\Dominion\Domain\AuthorizationDecision;
 use Infinity\Dominion\Domain\AuthorizationScope;
@@ -68,6 +69,15 @@ it('applies profiles and keeps assignments idempotent', function (): void {
     expect($this->user->hasRole(TestRole::EDITOR, 42))->toBeTrue()
         ->and($this->user->hasPermission(TestPermission::CREATE, 42))->toBeTrue()
         ->and($this->user->roles()->wherePivot('scope_key', AuthorizationScope::tenant(42)->key())->count())->toBe(1);
+});
+
+it('invalidates the principal cache once for a batch profile', function (): void {
+    $cache = $this->mock(AuthorizationCache::class);
+    $cache->shouldReceive('invalidatePrincipal')
+        ->once()
+        ->with($this->user);
+
+    $this->user->assignAuthorizationProfile('member', tenant: 42);
 });
 
 it('lets Laravel authorize abilities outside the Dominion catalog', function (): void {
