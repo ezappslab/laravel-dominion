@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 use Infinity\Dominion\Contracts\TenantContext;
@@ -10,6 +11,13 @@ use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
 use Tests\Support\Post;
 use Workbench\App\Models\User;
+
+it('abstains for principals that are not enabled for Dominion', function (): void {
+    $user = new class extends Authenticatable {};
+    $policy = app(config('dominion.policy.class'));
+
+    expect($policy->update($user, new Post))->toBeNull();
+});
 
 it('authorizes via policy correctly', function (): void {
     config(['dominion.policy.models' => [Post::class]]);

@@ -15,13 +15,13 @@ class DefaultPolicy
      *
      * Maps {model_table}.{ability} and delegates to AuthorizationResolver.
      */
-    public function __call(string $ability, array $arguments): Response|bool
+    public function __call(string $ability, array $arguments): Response|bool|null
     {
         $user = $arguments[0] ?? null;
         $model = $arguments[1] ?? null;
 
         if (! $user instanceof Model || ! $user instanceof DominionPrincipal) {
-            return false;
+            return null;
         }
 
         $scope = app(TenantContext::class)->currentScope();
