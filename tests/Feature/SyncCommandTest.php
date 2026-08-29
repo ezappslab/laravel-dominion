@@ -69,6 +69,57 @@ it('prunes catalog records absent from enums', function (): void {
         ->and(Permission::where('name', 'obsolete.permission')->exists())->toBeFalse();
 });
 
+it('prunes every catalog record when the configured catalog is empty', function (): void {
+    Role::create(['name' => 'obsolete']);
+    Permission::create(['name' => 'obsolete.permission']);
+    config([
+        'dominion.catalog.role_enum' => null,
+        'dominion.catalog.permission_enums' => [],
+        'dominion.catalog.role_permissions' => [],
+    ]);
+
+    $this->artisan('dominion:sync --prune')
+        ->assertSuccessful()
+        ->expectsOutput('Synchronizing 0 roles, 0 permissions, and 0 role mappings.')
+        ->expectsOutput('Dominion catalog synchronized.');
+
+    expect(Role::count())->toBe(0)
+        ->and(Permission::count())->toBe(0);
+});
+
+it('reports an empty catalog prune during a dry run without deleting records', function (): void {
+    Role::create(['name' => 'obsolete']);
+    Permission::create(['name' => 'obsolete.permission']);
+    config([
+        'dominion.catalog.role_enum' => null,
+        'dominion.catalog.permission_enums' => [],
+        'dominion.catalog.role_permissions' => [],
+    ]);
+
+    $this->artisan('dominion:sync --prune --dry-run')
+        ->assertSuccessful()
+        ->expectsOutput('Would synchronize 0 roles, 0 permissions, and 0 role mappings.');
+
+    expect(Role::count())->toBe(1)
+        ->and(Permission::count())->toBe(1);
+});
+
+it('prunes an empty catalog when pruning is enabled in configuration', function (): void {
+    Role::create(['name' => 'obsolete']);
+    Permission::create(['name' => 'obsolete.permission']);
+    config([
+        'dominion.catalog.role_enum' => null,
+        'dominion.catalog.permission_enums' => [],
+        'dominion.catalog.role_permissions' => [],
+        'dominion.catalog.prune' => true,
+    ]);
+
+    $this->artisan('dominion:sync')->assertSuccessful();
+
+    expect(Role::count())->toBe(0)
+        ->and(Permission::count())->toBe(0);
+});
+
 it('bulk synchronization is idempotent', function (): void {
     $this->artisan('dominion:sync')->assertSuccessful();
     $this->artisan('dominion:sync')->assertSuccessful();

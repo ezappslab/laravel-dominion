@@ -36,8 +36,9 @@ class SyncCommand extends Command
         $roles = $snapshot->roles;
         $permissions = $snapshot->permissions;
         $map = $snapshot->rolePermissions;
+        $prune = $this->option('prune') || (bool) config('dominion.catalog.prune', false);
 
-        if ($roles === [] && $permissions === []) {
+        if ($roles === [] && $permissions === [] && ! $prune) {
             $this->warn('No Dominion role or permission enums are configured.');
 
             return self::SUCCESS;
@@ -48,8 +49,6 @@ class SyncCommand extends Command
         if ($this->option('dry-run')) {
             return self::SUCCESS;
         }
-
-        $prune = $this->option('prune') || (bool) config('dominion.catalog.prune', false);
 
         DB::transaction(function () use ($roles, $permissions, $map, $models, $cache, $prune): void {
             $roleModel = $models->roleModel();
@@ -98,8 +97,12 @@ class SyncCommand extends Command
             }
 
             if ($prune) {
-                $roleModel::query()->whereNotIn('name', $roles)->delete();
-                $permissionModel::query()->whereNotIn('name', $permissions)->delete();
+                $roles === []
+                    ? $roleModel::query()->delete()
+                    : $roleModel::query()->whereNotIn('name', $roles)->delete();
+                $permissions === []
+                    ? $permissionModel::query()->delete()
+                    : $permissionModel::query()->whereNotIn('name', $permissions)->delete();
             }
 
             DB::afterCommit(function () use ($cache, $roles, $permissions, $map, $prune): void {
