@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Cache;
 use Infinity\Dominion\Contracts\AuthorizationCache as AuthorizationCacheContract;
 use Infinity\Dominion\Domain\AuthorizationDecision;
 use Infinity\Dominion\Domain\AuthorizationScope;
+use Infinity\Dominion\Exceptions\InvalidPrincipal;
 
 class AuthorizationCache implements AuthorizationCacheContract
 {
@@ -87,7 +88,7 @@ class AuthorizationCache implements AuthorizationCacheContract
      */
     protected function decisionKey(Model $principal, string $permission, AuthorizationScope $scope): string
     {
-        $identity = $principal->getMorphClass().'|'.$principal->getKey();
+        $identity = $this->principalIdentity($principal);
         $principalVersion = $this->version($this->principalVersionKey($principal));
         $catalogVersion = $this->version($this->catalogVersionKey());
         $digest = hash('sha256', $identity.'|'.$scope->key().'|'.$permission);
@@ -100,7 +101,19 @@ class AuthorizationCache implements AuthorizationCacheContract
      */
     protected function principalVersionKey(Model $principal): string
     {
-        return "{$this->prefix}:principal-version:".hash('sha256', $principal->getMorphClass().'|'.$principal->getKey());
+        return "{$this->prefix}:principal-version:".hash('sha256', $this->principalIdentity($principal));
+    }
+
+    /**
+     * Get a stable identity for a persisted principal.
+     */
+    protected function principalIdentity(Model $principal): string
+    {
+        if (! $principal->exists || $principal->getKey() === null) {
+            throw InvalidPrincipal::notPersisted($principal);
+        }
+
+        return $principal->getMorphClass().'|'.$principal->getKey();
     }
 
     /**

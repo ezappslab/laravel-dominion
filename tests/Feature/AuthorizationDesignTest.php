@@ -8,6 +8,7 @@ use Infinity\Dominion\Contracts\AuthorizationCache;
 use Infinity\Dominion\Contracts\TenantContext;
 use Infinity\Dominion\Domain\AuthorizationDecision;
 use Infinity\Dominion\Domain\AuthorizationScope;
+use Infinity\Dominion\Exceptions\InvalidPrincipal;
 use Infinity\Dominion\Models\Role;
 use Tests\Support\TestPermission;
 use Tests\Support\TestRole;
@@ -60,6 +61,17 @@ it('keeps global scope explicit while a tenant context is active', function (): 
     expect($this->user->hasPermission(TestPermission::CREATE))->toBeTrue()
         ->and($this->user->authorizationDecision('unknown.permission'))
         ->toBe(AuthorizationDecision::Abstain);
+});
+
+it('rejects authorization checks for principals that are not persisted', function (): void {
+    $user = new User([
+        'name' => 'Unsaved User',
+        'email' => 'unsaved@example.com',
+        'password' => 'password',
+    ]);
+
+    expect(fn () => $user->authorizationDecision(TestPermission::CREATE))
+        ->toThrow(InvalidPrincipal::class, 'must be persisted before authorization can be checked.');
 });
 
 it('applies profiles and keeps assignments idempotent', function (): void {

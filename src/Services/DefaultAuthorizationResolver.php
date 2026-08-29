@@ -8,6 +8,7 @@ use Infinity\Dominion\Contracts\AuthorizationCatalog;
 use Infinity\Dominion\Contracts\AuthorizationResolver;
 use Infinity\Dominion\Domain\AuthorizationDecision;
 use Infinity\Dominion\Domain\AuthorizationScope;
+use Infinity\Dominion\Exceptions\InvalidPrincipal;
 
 class DefaultAuthorizationResolver implements AuthorizationResolver
 {
@@ -25,6 +26,10 @@ class DefaultAuthorizationResolver implements AuthorizationResolver
      */
     public function decide(Model $model, mixed $permission, AuthorizationScope $scope): AuthorizationDecision
     {
+        if (! $model->exists || $model->getKey() === null) {
+            throw InvalidPrincipal::notPersisted($model);
+        }
+
         $permissionName = $this->catalog->resolvePermission($permission);
         $cached = $this->cache->get($model, $permissionName, $scope);
 

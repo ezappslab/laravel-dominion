@@ -6,6 +6,8 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Infinity\Dominion\Contracts\AuthorizationCache;
+use Infinity\Dominion\Domain\AuthorizationScope;
+use Infinity\Dominion\Exceptions\InvalidPrincipal;
 use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
 use RuntimeException;
@@ -14,6 +16,13 @@ use Workbench\App\Models\User;
 beforeEach(function (): void {
     config(['dominion.cache.enabled' => true]);
     config(['dominion.cache.store' => 'array']);
+});
+
+it('rejects cache access for principals that are not persisted', function (): void {
+    $user = new User;
+
+    expect(fn () => app(AuthorizationCache::class)->get($user, 'posts.edit', AuthorizationScope::global()))
+        ->toThrow(InvalidPrincipal::class, 'must be persisted before authorization can be checked.');
 });
 
 it('caches authorization results', function (): void {

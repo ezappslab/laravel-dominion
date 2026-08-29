@@ -13,6 +13,7 @@ use Infinity\Dominion\Events\PermissionGranted;
 use Infinity\Dominion\Events\PermissionRevoked;
 use Infinity\Dominion\Events\RoleAssigned;
 use Infinity\Dominion\Events\RoleRemoved;
+use Infinity\Dominion\Exceptions\InvalidPrincipal;
 use InvalidArgumentException;
 
 class AssignmentService
@@ -266,8 +267,8 @@ class AssignmentService
     {
         $principalId = $principal->getKey();
 
-        if ($principalId === null) {
-            throw new InvalidArgumentException('The principal must exist before roles or permissions can be assigned.');
+        if (! $principal->exists || $principalId === null) {
+            throw InvalidPrincipal::notPersisted($principal);
         }
 
         return [
