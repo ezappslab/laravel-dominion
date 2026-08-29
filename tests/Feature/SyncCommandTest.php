@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Support\Facades\DB;
 use Infinity\Dominion\Contracts\AuthorizationCatalog;
 use Infinity\Dominion\Exceptions\InvalidCatalogConfiguration;
 use Infinity\Dominion\Models\Permission;
@@ -66,6 +67,27 @@ it('prunes catalog records absent from enums', function (): void {
 
     expect(Role::where('name', 'obsolete')->exists())->toBeFalse()
         ->and(Permission::where('name', 'obsolete.permission')->exists())->toBeFalse();
+});
+
+it('bulk synchronization is idempotent', function (): void {
+    $this->artisan('dominion:sync')->assertSuccessful();
+    $this->artisan('dominion:sync')->assertSuccessful();
+
+    expect(Role::count())->toBe(2)
+        ->and(Permission::count())->toBe(4)
+        ->and(DB::table('permission_role')->count())->toBe(5);
+});
+
+it('clears stale permissions when a configured role mapping is removed', function (): void {
+    $this->artisan('dominion:sync')->assertSuccessful();
+    config(['dominion.catalog.role_permissions' => [
+        TestRole::ADMIN->name => ['*'],
+    ]]);
+
+    $this->artisan('dominion:sync')->assertSuccessful();
+
+    expect(Role::where('name', 'EDITOR')->firstOrFail()->permissions)->toBeEmpty()
+        ->and(Role::where('name', 'ADMIN')->firstOrFail()->permissions)->toHaveCount(4);
 });
 
 it('rejects invalid permission enum classes', function (): void {

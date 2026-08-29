@@ -54,24 +54,47 @@ class SyncCommand extends Command
         DB::transaction(function () use ($roles, $permissions, $map, $models, $cache, $prune): void {
             $roleModel = $models->roleModel();
             $permissionModel = $models->permissionModel();
+            $timestamp = now();
 
-            foreach ($roles as $role) {
-                $roleModel::query()->firstOrCreate(['name' => $role]);
+            if ($roles !== []) {
+                $roleModel::query()->insertOrIgnore(array_map(
+                    fn (string $role): array => ['name' => $role, 'created_at' => $timestamp, 'updated_at' => $timestamp],
+                    $roles,
+                ));
             }
 
-            foreach ($permissions as $permission) {
-                $permissionModel::query()->firstOrCreate(['name' => $permission]);
+            if ($permissions !== []) {
+                $permissionModel::query()->insertOrIgnore(array_map(
+                    fn (string $permission): array => ['name' => $permission, 'created_at' => $timestamp, 'updated_at' => $timestamp],
+                    $permissions,
+                ));
             }
 
-            foreach ($map as $roleName => $permissionNames) {
-                $role = $roleModel::query()->where('name', $roleName)->first();
+            $roleIds = $roleModel::query()->whereIn('name', $roles)->pluck('id', 'name')->all();
+            $permissionIds = $permissionModel::query()->whereIn('name', $permissions)->pluck('id', 'name')->all();
+            $relation = (new $roleModel)->permissions();
+            $pivot = (new $roleModel)->getConnection()->table($relation->getTable());
+            $roleForeignKey = $relation->getForeignPivotKeyName();
+            $permissionForeignKey = $relation->getRelatedPivotKeyName();
+            $pivotRows = [];
 
-                if ($role === null) {
-                    continue;
+            foreach ($roleIds as $roleName => $roleId) {
+                foreach ($map[$roleName] ?? [] as $permissionName) {
+                    $pivotRows[] = [
+                        $roleForeignKey => $roleId,
+                        $permissionForeignKey => $permissionIds[$permissionName],
+                        $relation->createdAt() => $timestamp,
+                        $relation->updatedAt() => $timestamp,
+                    ];
                 }
+            }
 
-                $permissionIds = $permissionModel::query()->whereIn('name', $permissionNames)->pluck('id')->all();
-                $role->permissions()->sync($permissionIds);
+            if ($roleIds !== []) {
+                $pivot->whereIn($roleForeignKey, array_values($roleIds))->delete();
+            }
+
+            foreach (array_chunk($pivotRows, 500) as $pivotChunk) {
+                $pivot->insert($pivotChunk);
             }
 
             if ($prune) {
