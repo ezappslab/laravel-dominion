@@ -42,6 +42,8 @@ it('authorizes via policy correctly', function (): void {
 });
 
 it('maps standard policy abilities to table permissions', function (): void {
+    config(['dominion.policy.models' => [Post::class]]);
+
     Gate::policy(Post::class, config('dominion.policy.class'));
 
     $user = User::create([

@@ -9,6 +9,7 @@ use Infinity\Dominion\Contracts\TenantContext;
 use Infinity\Dominion\Domain\AuthorizationScope;
 use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
+use Tests\Support\Post;
 use Workbench\App\Models\User;
 
 it('abstains for principals that are not enabled for Dominion', function (): void {
@@ -17,6 +18,24 @@ it('abstains for principals that are not enabled for Dominion', function (): voi
     Gate::define('posts.update', fn (): bool => true);
 
     expect(Gate::forUser($user)->allows('posts.update'))->toBeTrue();
+});
+
+it('abstains from resource abilities for principals that are not enabled for Dominion', function (): void {
+    $user = new class extends Authenticatable {};
+    Gate::define('update', fn (): bool => true);
+
+    expect(Gate::forUser($user)->allows('update', new Post))->toBeTrue();
+});
+
+it('denies unqualified resource abilities outside configured Dominion policies', function (): void {
+    $user = User::create([
+        'name' => 'John Doe',
+        'email' => 'resource@example.com',
+        'password' => Hash::make('password'),
+    ]);
+    Gate::define('update', fn (): bool => true);
+
+    expect($user->can('update', new Post))->toBeFalse();
 });
 
 it('resolves permission via Gate::before', function (): void {

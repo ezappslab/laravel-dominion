@@ -98,7 +98,7 @@ class DominionServiceProvider extends PackageServiceProvider
                 return null;
             }
 
-            if ($arguments !== [] && ! str_contains($ability, '.')) {
+            if ($this->delegatesToConfiguredPolicy($ability, $arguments)) {
                 return null;
             }
 
@@ -110,6 +110,35 @@ class DominionServiceProvider extends PackageServiceProvider
 
             return $decision === AuthorizationDecision::Allow;
         });
+    }
+
+    /**
+     * Determine whether a standard resource ability belongs to a configured policy.
+     *
+     * @param  array<int, mixed>  $arguments
+     */
+    protected function delegatesToConfiguredPolicy(string $ability, array $arguments): bool
+    {
+        if (str_contains($ability, '.') || $arguments === [] || ! (bool) config('dominion.policy.enabled', true)) {
+            return false;
+        }
+
+        $resource = $arguments[0];
+        $resourceClass = $resource instanceof Model ? $resource::class : $resource;
+
+        if (! is_string($resourceClass) || ! is_a($resourceClass, Model::class, true)) {
+            return false;
+        }
+
+        foreach (config('dominion.policy.models', []) as $model => $configuredPolicy) {
+            $modelClass = is_int($model) ? $configuredPolicy : $model;
+
+            if (is_string($modelClass) && is_a($resourceClass, $modelClass, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
