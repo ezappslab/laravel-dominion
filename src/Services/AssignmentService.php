@@ -3,7 +3,6 @@
 namespace Infinity\Dominion\Services;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Infinity\Dominion\Contracts\AuthorizationCache;
 use Infinity\Dominion\Contracts\AuthorizationCatalog;
@@ -25,6 +24,7 @@ class AssignmentService
         protected AuthorizationCatalog $catalog,
         protected AuthorizationCache $cache,
         protected ModelRegistry $models,
+        protected DominionDatabase $database,
     ) {}
 
     /**
@@ -32,7 +32,7 @@ class AssignmentService
      */
     public function assignRole(Model $principal, mixed $role, AuthorizationScope $scope): void
     {
-        DB::transaction(function () use ($principal, $role, $scope): void {
+        $this->database->connection()->transaction(function () use ($principal, $role, $scope): void {
             $event = $this->assignRoleMutation($principal, $role, $scope);
             $this->afterCommit($principal, $event === null ? [] : [$event]);
         });
@@ -43,7 +43,7 @@ class AssignmentService
      */
     public function removeRole(Model $principal, mixed $role, AuthorizationScope $scope): void
     {
-        DB::transaction(function () use ($principal, $role, $scope): void {
+        $this->database->connection()->transaction(function () use ($principal, $role, $scope): void {
             $event = $this->removeRoleMutation($principal, $role, $scope);
             $this->afterCommit($principal, $event === null ? [] : [$event]);
         });
@@ -54,7 +54,7 @@ class AssignmentService
      */
     public function grant(Model $principal, mixed $permission, AuthorizationScope $scope): void
     {
-        DB::transaction(function () use ($principal, $permission, $scope): void {
+        $this->database->connection()->transaction(function () use ($principal, $permission, $scope): void {
             $event = $this->permissionEffectMutation(
                 'permission_grants',
                 'permission_denials',
@@ -72,7 +72,7 @@ class AssignmentService
      */
     public function deny(Model $principal, mixed $permission, AuthorizationScope $scope): void
     {
-        DB::transaction(function () use ($principal, $permission, $scope): void {
+        $this->database->connection()->transaction(function () use ($principal, $permission, $scope): void {
             $event = $this->permissionEffectMutation(
                 'permission_denials',
                 'permission_grants',
@@ -90,7 +90,7 @@ class AssignmentService
      */
     public function revoke(Model $principal, mixed $permission, AuthorizationScope $scope): void
     {
-        DB::transaction(function () use ($principal, $permission, $scope): void {
+        $this->database->connection()->transaction(function () use ($principal, $permission, $scope): void {
             $event = $this->revokePermissionMutation($principal, $permission, $scope);
             $this->afterCommit($principal, $event === null ? [] : [$event]);
         });
@@ -103,7 +103,7 @@ class AssignmentService
      */
     public function applyProfile(Model $principal, array $profile, AuthorizationScope $scope): void
     {
-        DB::transaction(function () use ($principal, $profile, $scope): void {
+        $this->database->connection()->transaction(function () use ($principal, $profile, $scope): void {
             $events = [];
 
             foreach ($profile['roles'] ?? [] as $role) {
@@ -147,7 +147,7 @@ class AssignmentService
             throw new InvalidArgumentException("Role [{$roleName}] is not present in the Dominion catalog. Run dominion:sync first.");
         }
 
-        $inserted = DB::table('role_assignments')->insertOrIgnore(
+        $inserted = $this->database->connection()->table('role_assignments')->insertOrIgnore(
             $this->identity($principal, $scope) + ['role_id' => $roleId] + $this->timestamps(),
         );
 
@@ -167,7 +167,7 @@ class AssignmentService
             return null;
         }
 
-        $deleted = DB::table('role_assignments')
+        $deleted = $this->database->connection()->table('role_assignments')
             ->where($this->identity($principal, $scope) + ['role_id' => $roleId])
             ->delete();
 
@@ -196,8 +196,9 @@ class AssignmentService
 
         $identity = $this->identity($principal, $scope) + ['permission_id' => $permissionId];
 
-        $changed = DB::table($oppositeTable)->where($identity)->delete() > 0;
-        $inserted = DB::table($table)->insertOrIgnore($identity + $this->timestamps());
+        $connection = $this->database->connection();
+        $changed = $connection->table($oppositeTable)->where($identity)->delete() > 0;
+        $inserted = $connection->table($table)->insertOrIgnore($identity + $this->timestamps());
 
         return $changed || $inserted > 0
             ? new $eventClass($principal, $permissionName, $scope)
@@ -217,8 +218,9 @@ class AssignmentService
         }
 
         $identity = $this->identity($principal, $scope) + ['permission_id' => $permissionId];
-        $deleted = DB::table('permission_grants')->where($identity)->delete();
-        $deleted += DB::table('permission_denials')->where($identity)->delete();
+        $connection = $this->database->connection();
+        $deleted = $connection->table('permission_grants')->where($identity)->delete();
+        $deleted += $connection->table('permission_denials')->where($identity)->delete();
 
         return $deleted > 0 ? new PermissionRevoked($principal, $permissionName, $scope) : null;
     }
@@ -234,7 +236,7 @@ class AssignmentService
             return;
         }
 
-        DB::afterCommit(function () use ($principal, $events): void {
+        $this->database->connection()->afterCommit(function () use ($principal, $events): void {
             $this->cache->invalidatePrincipal($principal);
 
             foreach ($events as $event) {

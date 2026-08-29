@@ -2,25 +2,27 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
+use Infinity\Dominion\Services\DominionDatabase;
 
 return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('roles', function (Blueprint $table): void {
+        $schema = app(DominionDatabase::class)->connection()->getSchemaBuilder();
+
+        $schema->create('roles', function (Blueprint $table): void {
             $table->id();
             $table->string('name')->unique();
             $table->timestamps();
         });
 
-        Schema::create('permissions', function (Blueprint $table): void {
+        $schema->create('permissions', function (Blueprint $table): void {
             $table->id();
             $table->string('name')->unique();
             $table->timestamps();
         });
 
-        Schema::create('permission_role', function (Blueprint $table): void {
+        $schema->create('permission_role', function (Blueprint $table): void {
             $table->foreignId('permission_id')->constrained()->cascadeOnDelete();
             $table->foreignId('role_id')->constrained()->cascadeOnDelete();
             $table->timestamps();
@@ -45,18 +47,20 @@ return new class extends Migration
             );
         };
 
-        Schema::create('role_assignments', fn (Blueprint $table) => $createAssignment($table, 'role_id', 'role'));
-        Schema::create('permission_grants', fn (Blueprint $table) => $createAssignment($table, 'permission_id', 'permission_grant'));
-        Schema::create('permission_denials', fn (Blueprint $table) => $createAssignment($table, 'permission_id', 'permission_denial'));
+        $schema->create('role_assignments', fn (Blueprint $table) => $createAssignment($table, 'role_id', 'role'));
+        $schema->create('permission_grants', fn (Blueprint $table) => $createAssignment($table, 'permission_id', 'permission_grant'));
+        $schema->create('permission_denials', fn (Blueprint $table) => $createAssignment($table, 'permission_id', 'permission_denial'));
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('permission_denials');
-        Schema::dropIfExists('permission_grants');
-        Schema::dropIfExists('role_assignments');
-        Schema::dropIfExists('permission_role');
-        Schema::dropIfExists('permissions');
-        Schema::dropIfExists('roles');
+        $schema = app(DominionDatabase::class)->connection()->getSchemaBuilder();
+
+        $schema->dropIfExists('permission_denials');
+        $schema->dropIfExists('permission_grants');
+        $schema->dropIfExists('role_assignments');
+        $schema->dropIfExists('permission_role');
+        $schema->dropIfExists('permissions');
+        $schema->dropIfExists('roles');
     }
 };

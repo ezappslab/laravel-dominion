@@ -19,6 +19,7 @@ class DefaultAuthorizationResolver implements AuthorizationResolver
         protected AuthorizationCatalog $catalog,
         protected AuthorizationCache $cache,
         protected ModelRegistry $models,
+        protected DominionDatabase $database,
     ) {}
 
     /**
@@ -58,7 +59,7 @@ class DefaultAuthorizationResolver implements AuthorizationResolver
     {
         $permissionModel = $this->models->permissionModel();
         $model = new $permissionModel;
-        $connection = $model->getConnection();
+        $connection = $this->database->connection();
         $permissionTable = $model->getTable();
         $identity = [
             'principal_type' => $principal->getMorphClass(),

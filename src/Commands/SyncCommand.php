@@ -3,11 +3,11 @@
 namespace Infinity\Dominion\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Infinity\Dominion\Contracts\AuthorizationCache;
 use Infinity\Dominion\Contracts\AuthorizationCatalog;
 use Infinity\Dominion\Events\CatalogSynchronized;
+use Infinity\Dominion\Services\DominionDatabase;
 use Infinity\Dominion\Services\ModelRegistry;
 
 class SyncCommand extends Command
@@ -31,6 +31,7 @@ class SyncCommand extends Command
         AuthorizationCatalog $catalog,
         ModelRegistry $models,
         AuthorizationCache $cache,
+        DominionDatabase $database,
     ): int {
         $snapshot = $catalog->snapshot();
         $roles = $snapshot->roles;
@@ -50,7 +51,7 @@ class SyncCommand extends Command
             return self::SUCCESS;
         }
 
-        DB::transaction(function () use ($roles, $permissions, $map, $models, $cache, $prune): void {
+        $database->connection()->transaction(function () use ($roles, $permissions, $map, $models, $cache, $prune, $database): void {
             $roleModel = $models->roleModel();
             $permissionModel = $models->permissionModel();
             $timestamp = now();
@@ -72,7 +73,8 @@ class SyncCommand extends Command
             $roleIds = $roleModel::query()->whereIn('name', $roles)->pluck('id', 'name')->all();
             $permissionIds = $permissionModel::query()->whereIn('name', $permissions)->pluck('id', 'name')->all();
             $relation = (new $roleModel)->permissions();
-            $pivot = (new $roleModel)->getConnection()->table($relation->getTable());
+            $connection = $database->connection();
+            $pivot = $connection->table($relation->getTable());
             $roleForeignKey = $relation->getForeignPivotKeyName();
             $permissionForeignKey = $relation->getRelatedPivotKeyName();
             $pivotRows = [];
@@ -105,7 +107,7 @@ class SyncCommand extends Command
                     : $permissionModel::query()->whereNotIn('name', $permissions)->delete();
             }
 
-            DB::afterCommit(function () use ($cache, $roles, $permissions, $map, $prune): void {
+            $connection->afterCommit(function () use ($cache, $roles, $permissions, $map, $prune): void {
                 $cache->invalidateCatalog();
                 Event::dispatch(new CatalogSynchronized($roles, $permissions, $map, $prune));
             });
