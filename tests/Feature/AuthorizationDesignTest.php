@@ -60,7 +60,7 @@ it('keeps global scope explicit while a tenant context is active', function (): 
 
     expect($this->user->hasPermission(TestPermission::CREATE))->toBeTrue()
         ->and($this->user->authorizationDecision('unknown.permission'))
-        ->toBe(AuthorizationDecision::Abstain);
+        ->toBe(AuthorizationDecision::Deny);
 });
 
 it('rejects authorization checks for principals that are not persisted', function (): void {
@@ -92,10 +92,10 @@ it('invalidates the principal cache once for a batch profile', function (): void
     $this->user->assignAuthorizationProfile('member', tenant: 42);
 });
 
-it('lets Laravel authorize abilities outside the Dominion catalog', function (): void {
+it('denies abilities outside the Dominion catalog for Dominion principals', function (): void {
     Gate::define('external.ability', fn (User $user): bool => true);
 
-    expect($this->user->can('external.ability'))->toBeTrue();
+    expect($this->user->can('external.ability'))->toBeFalse();
 });
 
 it('synchronizes wildcard role maps', function (): void {

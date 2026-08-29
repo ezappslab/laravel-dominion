@@ -131,8 +131,7 @@ For a tenant-scoped request Dominion evaluates:
 1. Tenant or global direct denial
 2. Tenant or global direct grant
 3. Tenant or global role permission
-4. Deny when the permission is known but unassigned
-5. Abstain when the ability is outside the Dominion catalog
+4. Deny when no explicit allow applies, including unknown abilities
 
 An explicit denial therefore always wins. Set `tenancy.global_inherits_into_tenant` to `false` to isolate tenant checks from global assignments.
 
@@ -144,7 +143,7 @@ The Gate integration is enabled by default:
 $user->can(Permission::UsersUpdate->value);
 ```
 
-Abilities absent from the synchronized Dominion catalog produce an `abstain` decision, allowing other Laravel gates and policies to run. Set `gate.unknown_ability` to `deny` for authoritative behavior.
+Dominion is authoritative only for models implementing `DominionPrincipal`. For those models, every ability that does not resolve to an explicit allow is denied. Other authenticated model types bypass Dominion and continue through Laravel's gates and policies.
 
 Register the default resource policy:
 

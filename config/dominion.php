@@ -90,17 +90,14 @@ return [
     | Gate Integration
     |--------------------------------------------------------------------------
     |
-    | Unknown abilities normally abstain so Laravel's other gates and policies
-    | may continue. Set `unknown_ability` to `deny` for authoritative access.
+    | Dominion is authoritative for models implementing DominionPrincipal. Any
+    | ability that does not resolve to an explicit allow is denied by default.
     |
     */
 
     'gate' => [
         // Registers Dominion's callback with Laravel's authorization Gate.
         'enabled' => true,
-
-        // Use `abstain` to continue to other gates or `deny` to stop evaluation.
-        'unknown_ability' => 'abstain',
     ],
 
     /*

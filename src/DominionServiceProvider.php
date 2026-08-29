@@ -87,14 +87,18 @@ class DominionServiceProvider extends PackageServiceProvider
     /**
      * Registers a "before" callback for the authorization gate to intercept permission checks.
      *
-     * This method adds a callback to the Gate that will execute before any ability-based authorization logic.
-     * The callback checks if the user object has a `hasPermission` method, and if so, calls it with the requested ability.
-     * If the user does not have the `hasPermission` method, the callback returns null, allowing the default authorization logic to proceed.
+     * Dominion principals are denied unless the requested permission is explicitly allowed.
+     * Standard resource abilities are delegated to the configured policy so that it
+     * can translate abilities such as `update` into catalog permissions.
      */
     protected function registerGateBefore(): void
     {
-        Gate::before(function (mixed $user, string $ability): ?bool {
+        Gate::before(function (mixed $user, string $ability, array $arguments = []): ?bool {
             if (! $user instanceof Model || ! $user instanceof DominionPrincipal) {
+                return null;
+            }
+
+            if ($arguments !== [] && ! str_contains($ability, '.')) {
                 return null;
             }
 
@@ -104,11 +108,7 @@ class DominionServiceProvider extends PackageServiceProvider
                 app(TenantContext::class)->currentScope(),
             );
 
-            if ($decision === AuthorizationDecision::Abstain && config('dominion.gate.unknown_ability') === 'deny') {
-                return false;
-            }
-
-            return $decision->toGateResult();
+            return $decision === AuthorizationDecision::Allow;
         });
     }
 

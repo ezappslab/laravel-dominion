@@ -93,7 +93,7 @@ class DefaultAuthorizationResolver implements AuthorizationResolver
             ->max('precedence');
 
         if ($precedence === null) {
-            return AuthorizationDecision::Abstain;
+            return AuthorizationDecision::Deny;
         }
 
         return match ((int) $precedence) {

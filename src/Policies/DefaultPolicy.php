@@ -5,6 +5,7 @@ namespace Infinity\Dominion\Policies;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Database\Eloquent\Model;
 use Infinity\Dominion\Contracts\AuthorizationResolver;
+use Infinity\Dominion\Contracts\DominionPrincipal;
 use Infinity\Dominion\Contracts\TenantContext;
 
 class DefaultPolicy
@@ -19,7 +20,7 @@ class DefaultPolicy
         $user = $arguments[0] ?? null;
         $model = $arguments[1] ?? null;
 
-        if (! $user instanceof Model) {
+        if (! $user instanceof Model || ! $user instanceof DominionPrincipal) {
             return false;
         }
 
