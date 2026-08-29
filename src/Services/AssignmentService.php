@@ -4,9 +4,15 @@ namespace Infinity\Dominion\Services;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Infinity\Dominion\Contracts\AuthorizationCache;
 use Infinity\Dominion\Contracts\AuthorizationCatalog;
 use Infinity\Dominion\Domain\AuthorizationScope;
+use Infinity\Dominion\Events\PermissionDenied;
+use Infinity\Dominion\Events\PermissionGranted;
+use Infinity\Dominion\Events\PermissionRevoked;
+use Infinity\Dominion\Events\RoleAssigned;
+use Infinity\Dominion\Events\RoleRemoved;
 use InvalidArgumentException;
 
 class AssignmentService
@@ -33,13 +39,14 @@ class AssignmentService
             throw new InvalidArgumentException("Role [{$roleName}] is not present in the Dominion catalog. Run dominion:sync first.");
         }
 
-        DB::transaction(function () use ($principal, $scope, $roleId): void {
-            DB::table('role_assignments')->upsert(
-                [$this->identity($principal, $scope) + ['role_id' => $roleId] + $this->timestamps()],
-                ['role_id', 'principal_type', 'principal_id', 'scope_key'],
-                ['updated_at'],
+        DB::transaction(function () use ($principal, $roleName, $scope, $roleId): void {
+            $inserted = DB::table('role_assignments')->insertOrIgnore(
+                $this->identity($principal, $scope) + ['role_id' => $roleId] + $this->timestamps(),
             );
-            $this->invalidatePrincipalAfterCommit($principal);
+
+            if ($inserted > 0) {
+                $this->afterCommit($principal, new RoleAssigned($principal, $roleName, $scope));
+            }
         });
     }
 
@@ -53,13 +60,13 @@ class AssignmentService
         $roleId = $role instanceof $roleModel ? $role->getKey() : $roleModel::query()->where('name', $roleName)->value('id');
 
         if ($roleId !== null) {
-            DB::transaction(function () use ($principal, $scope, $roleId): void {
+            DB::transaction(function () use ($principal, $roleName, $scope, $roleId): void {
                 $deleted = DB::table('role_assignments')
                     ->where($this->identity($principal, $scope) + ['role_id' => $roleId])
                     ->delete();
 
                 if ($deleted > 0) {
-                    $this->invalidatePrincipalAfterCommit($principal);
+                    $this->afterCommit($principal, new RoleRemoved($principal, $roleName, $scope));
                 }
             });
         }
@@ -76,6 +83,7 @@ class AssignmentService
             $principal,
             $permission,
             $scope,
+            PermissionGranted::class,
         );
     }
 
@@ -90,6 +98,7 @@ class AssignmentService
             $principal,
             $permission,
             $scope,
+            PermissionDenied::class,
         );
     }
 
@@ -98,17 +107,18 @@ class AssignmentService
      */
     public function revoke(Model $principal, mixed $permission, AuthorizationScope $scope): void
     {
-        $permissionId = $this->permissionId($permission);
+        $permissionName = $this->catalog->resolvePermission($permission);
+        $permissionId = $this->permissionId($permissionName);
 
         if ($permissionId !== null) {
             $identity = $this->identity($principal, $scope) + ['permission_id' => $permissionId];
 
-            DB::transaction(function () use ($principal, $identity): void {
+            DB::transaction(function () use ($principal, $permissionName, $scope, $identity): void {
                 $deleted = DB::table('permission_grants')->where($identity)->delete();
                 $deleted += DB::table('permission_denials')->where($identity)->delete();
 
                 if ($deleted > 0) {
-                    $this->invalidatePrincipalAfterCommit($principal);
+                    $this->afterCommit($principal, new PermissionRevoked($principal, $permissionName, $scope));
                 }
             });
         }
@@ -136,6 +146,8 @@ class AssignmentService
 
     /**
      * Persist a direct permission effect for the principal and scope.
+     *
+     * @param  class-string<PermissionGranted|PermissionDenied>  $eventClass
      */
     protected function storePermissionEffect(
         string $table,
@@ -143,6 +155,7 @@ class AssignmentService
         Model $principal,
         mixed $permission,
         AuthorizationScope $scope,
+        string $eventClass,
     ): void {
         $permissionName = $this->catalog->resolvePermission($permission);
         $permissionId = $this->permissionId($permissionName);
@@ -153,23 +166,27 @@ class AssignmentService
 
         $identity = $this->identity($principal, $scope) + ['permission_id' => $permissionId];
 
-        DB::transaction(function () use ($table, $oppositeTable, $identity, $principal): void {
-            DB::table($oppositeTable)->where($identity)->delete();
-            DB::table($table)->upsert(
-                [$identity + $this->timestamps()],
-                ['permission_id', 'principal_type', 'principal_id', 'scope_key'],
-                ['updated_at'],
+        DB::transaction(function () use ($table, $oppositeTable, $identity, $principal, $permissionName, $scope, $eventClass): void {
+            $changed = DB::table($oppositeTable)->where($identity)->delete() > 0;
+            $inserted = DB::table($table)->insertOrIgnore(
+                $identity + $this->timestamps(),
             );
-            $this->invalidatePrincipalAfterCommit($principal);
+
+            if ($changed || $inserted > 0) {
+                $this->afterCommit($principal, new $eventClass($principal, $permissionName, $scope));
+            }
         });
     }
 
     /**
-     * Invalidate principal decisions after the surrounding transaction commits.
+     * Invalidate principal decisions and dispatch an event after commit.
      */
-    protected function invalidatePrincipalAfterCommit(Model $principal): void
+    protected function afterCommit(Model $principal, object $event): void
     {
-        DB::afterCommit(fn () => $this->cache->invalidatePrincipal($principal));
+        DB::afterCommit(function () use ($principal, $event): void {
+            $this->cache->invalidatePrincipal($principal);
+            Event::dispatch($event);
+        });
     }
 
     /**

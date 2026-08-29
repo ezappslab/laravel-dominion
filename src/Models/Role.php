@@ -5,7 +5,9 @@ namespace Infinity\Dominion\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Infinity\Dominion\Contracts\AuthorizationCache;
+use Infinity\Dominion\Events\RolePermissionsSynchronized;
 use Infinity\Dominion\Services\ModelRegistry;
 
 /** @property string $name */
@@ -44,7 +46,10 @@ class Role extends Model
 
         DB::transaction(function () use ($ids): void {
             $this->permissions()->sync($ids);
-            DB::afterCommit(fn () => app(AuthorizationCache::class)->invalidateCatalog());
+            DB::afterCommit(function () use ($ids): void {
+                app(AuthorizationCache::class)->invalidateCatalog();
+                Event::dispatch(new RolePermissionsSynchronized($this, $ids));
+            });
         });
 
         return $this;

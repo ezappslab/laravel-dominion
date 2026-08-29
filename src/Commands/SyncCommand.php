@@ -4,8 +4,10 @@ namespace Infinity\Dominion\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Infinity\Dominion\Contracts\AuthorizationCache;
 use Infinity\Dominion\Contracts\AuthorizationCatalog;
+use Infinity\Dominion\Events\CatalogSynchronized;
 use Infinity\Dominion\Services\ModelRegistry;
 
 class SyncCommand extends Command
@@ -46,7 +48,9 @@ class SyncCommand extends Command
             return self::SUCCESS;
         }
 
-        DB::transaction(function () use ($roles, $permissions, $map, $models, $cache): void {
+        $prune = $this->option('prune') || (bool) config('dominion.catalog.prune', false);
+
+        DB::transaction(function () use ($roles, $permissions, $map, $models, $cache, $prune): void {
             $roleModel = $models->roleModel();
             $permissionModel = $models->permissionModel();
 
@@ -69,12 +73,15 @@ class SyncCommand extends Command
                 $role->permissions()->sync($permissionIds);
             }
 
-            if ($this->option('prune') || (bool) config('dominion.catalog.prune', false)) {
+            if ($prune) {
                 $roleModel::query()->whereNotIn('name', $roles)->delete();
                 $permissionModel::query()->whereNotIn('name', $permissions)->delete();
             }
 
-            DB::afterCommit(fn () => $cache->invalidateCatalog());
+            DB::afterCommit(function () use ($cache, $roles, $permissions, $map, $prune): void {
+                $cache->invalidateCatalog();
+                Event::dispatch(new CatalogSynchronized($roles, $permissions, $map, $prune));
+            });
         });
 
         $this->info('Dominion catalog synchronized.');
