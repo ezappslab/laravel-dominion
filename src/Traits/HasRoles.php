@@ -9,7 +9,6 @@ use Infinity\Dominion\Contracts\RoleValueResolver;
 use Infinity\Dominion\Contracts\TenantContext;
 use Infinity\Dominion\Models\Role;
 use Infinity\Dominion\Services\AuthorizationCache;
-use Workbench\App\Models\User;
 
 trait HasRoles
 {
@@ -30,7 +29,7 @@ trait HasRoles
      *
      * @param  mixed  $role  The role to be added. It can be an identifier or an object representing the role.
      * @param  mixed|null  $tenantId  The tenant identifier. If not provided, the current tenant context will be used.
-     * @return User|HasRoles Returns the current instance for method chaining.
+     * @return self Returns the current instance for method chaining.
      *
      * @throws BindingResolutionException
      * @throws CircularDependencyException
@@ -54,7 +53,7 @@ trait HasRoles
      *
      * @param  mixed  $role  The role to be removed. Can be a role instance, ID, or name.
      * @param  mixed|null  $tenantId  The identifier of the tenant context. If null, the current tenant context is used.
-     * @return User|HasRoles The current instance of the model, for method chaining.
+     * @return self The current instance of the model, for method chaining.
      *
      * @throws BindingResolutionException
      * @throws CircularDependencyException

@@ -8,7 +8,7 @@ use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
 use Workbench\App\Models\User;
 
-it('resolves permission via Gate::before', function () {
+it('resolves permission via Gate::before', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -24,7 +24,7 @@ it('resolves permission via Gate::before', function () {
     expect($user->can('posts.update'))->toBeTrue();
 });
 
-it('resolves permission via role in Gate::before', function () {
+it('resolves permission via role in Gate::before', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -41,7 +41,7 @@ it('resolves permission via role in Gate::before', function () {
     expect($user->can('posts.update'))->toBeTrue();
 });
 
-it('respects explicit deny in Gate::before', function () {
+it('respects explicit deny in Gate::before', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -60,7 +60,7 @@ it('respects explicit deny in Gate::before', function () {
         ->toBeFalse();
 });
 
-it('is tenant-aware in Gate::before', function () {
+it('is tenant-aware in Gate::before', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',

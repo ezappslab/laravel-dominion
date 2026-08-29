@@ -5,7 +5,7 @@ use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
 use Workbench\App\Models\User;
 
-it('grants permission via role', function () {
+it('grants permission via role', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -22,7 +22,7 @@ it('grants permission via role', function () {
         ->toBeTrue();
 });
 
-it('denies permission even if granted via role', function () {
+it('denies permission even if granted via role', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -40,7 +40,7 @@ it('denies permission even if granted via role', function () {
         ->toBeFalse();
 });
 
-it('respects tenant scoping for role-based permissions', function () {
+it('respects tenant scoping for role-based permissions', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -66,7 +66,7 @@ it('respects tenant scoping for role-based permissions', function () {
         ->toBeFalse();
 });
 
-it('handles multiple roles with overlapping permissions', function () {
+it('handles multiple roles with overlapping permissions', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -86,7 +86,7 @@ it('handles multiple roles with overlapping permissions', function () {
         ->toBeTrue();
 });
 
-it('overrides role permission with explicit tenant deny', function () {
+it('overrides role permission with explicit tenant deny', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',

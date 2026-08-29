@@ -10,7 +10,7 @@ use Infinity\Dominion\Models\Role;
 use Tests\Support\Post;
 use Workbench\App\Models\User;
 
-it('authorizes via policy correctly', function () {
+it('authorizes via policy correctly', function (): void {
     config(['dominion.policy.models' => [Post::class]]);
 
     Gate::policy(Post::class, config('dominion.policy.class'));
@@ -32,7 +32,7 @@ it('authorizes via policy correctly', function () {
     expect($user->can('posts.update', $post))->toBeTrue();
 });
 
-it('authorizes via policy with roles', function () {
+it('authorizes via policy with roles', function (): void {
     config(['dominion.policy.models' => [Post::class]]);
 
     Gate::policy(Post::class, config('dominion.policy.class'));
@@ -58,7 +58,7 @@ it('authorizes via policy with roles', function () {
     expect($user->can('posts.delete', $post))->toBeTrue();
 });
 
-it('is tenant aware via policy', function () {
+it('is tenant aware via policy', function (): void {
     config(['dominion.policy.models' => [Post::class]]);
 
     Gate::policy(Post::class, config('dominion.policy.class'));

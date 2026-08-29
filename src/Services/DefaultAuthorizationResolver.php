@@ -143,7 +143,7 @@ class DefaultAuthorizationResolver implements AuthorizationResolver
         // and see if any of those roles have the permission.
         return $model->roles()
             ->wherePivot('tenant_id', $tenantId)
-            ->whereHas('permissions', function ($query) use ($permissionId) {
+            ->whereHas('permissions', function ($query) use ($permissionId): void {
                 $query->where('permissions.id', $permissionId);
             })
             ->exists();

@@ -25,7 +25,7 @@ class DominionServiceProvider extends PackageServiceProvider
                 'create_dominion_tables',
             ])
             ->hasCommand(SyncCommand::class)
-            ->hasInstallCommand(function (InstallCommand $command) {
+            ->hasInstallCommand(function (InstallCommand $command): void {
                 $command
                     ->publishConfigFile()
                     ->publishMigrations();
@@ -134,9 +134,9 @@ class DominionServiceProvider extends PackageServiceProvider
         ];
 
         foreach ($services as $contract => $configKey) {
-            $instance = $this->app->make($contract);
+            $implementation = config("dominion.services.{$configKey}");
 
-            if (! $instance instanceof $contract) {
+            if (! is_string($implementation) || ! is_a($implementation, $contract, true)) {
                 throw new RuntimeException("The configured service for 'dominion.services.{$configKey}' must implement {$contract}.");
             }
         }

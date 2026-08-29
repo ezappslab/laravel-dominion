@@ -1,5 +1,7 @@
 <?php
 
+use Infinity\Dominion\DominionServiceProvider;
+
 return [
-    \Infinity\Dominion\DominionServiceProvider::class,
+    DominionServiceProvider::class,
 ];

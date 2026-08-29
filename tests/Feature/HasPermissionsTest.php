@@ -4,7 +4,7 @@ use Illuminate\Support\Facades\Hash;
 use Infinity\Dominion\Models\Permission;
 use Workbench\App\Models\User;
 
-beforeEach(function () {
+beforeEach(function (): void {
     $this->user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -14,14 +14,14 @@ beforeEach(function () {
     $this->permission = Permission::create(['name' => 'posts.create']);
 });
 
-it('can allow a permission globally', function () {
+it('can allow a permission globally', function (): void {
     $this->user->allow($this->permission);
 
     expect($this->user->hasPermission($this->permission))
         ->toBeTrue();
 });
 
-it('can allow a permission for a tenant', function () {
+it('can allow a permission for a tenant', function (): void {
     $this->user->allow($this->permission, 1);
 
     expect($this->user->hasPermission($this->permission, 1))
@@ -30,7 +30,7 @@ it('can allow a permission for a tenant', function () {
         ->toBeFalse();
 });
 
-it('deny precedence over allow globally', function () {
+it('deny precedence over allow globally', function (): void {
     $this->user->allow($this->permission);
     $this->user->deny($this->permission);
 
@@ -38,7 +38,7 @@ it('deny precedence over allow globally', function () {
         ->toBeFalse();
 });
 
-it('tenant deny precedence over global allow', function () {
+it('tenant deny precedence over global allow', function (): void {
     $this->user->allow($this->permission); // global allow
     $this->user->deny($this->permission, 1); // tenant deny
 
@@ -48,7 +48,7 @@ it('tenant deny precedence over global allow', function () {
         ->toBeTrue();
 });
 
-it('global deny precedence over tenant allow', function () {
+it('global deny precedence over tenant allow', function (): void {
     $this->user->deny($this->permission);
     $this->user->allow($this->permission, 1);
 
@@ -56,7 +56,7 @@ it('global deny precedence over tenant allow', function () {
         ->toBeFalse();
 });
 
-it('tenant override: tenant allow over global state (if not globally denied)', function () {
+it('tenant override: tenant allow over global state (if not globally denied)', function (): void {
     // If not globally allowed or denied, tenant allow should work
     $this->user->allow($this->permission, 1);
 
@@ -66,7 +66,7 @@ it('tenant override: tenant allow over global state (if not globally denied)', f
         ->toBeFalse();
 });
 
-it('resolves permission by name', function () {
+it('resolves permission by name', function (): void {
     $this->user->allow('posts.create');
 
     expect($this->user->hasPermission('posts.create'))

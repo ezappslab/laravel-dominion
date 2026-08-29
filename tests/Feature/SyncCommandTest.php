@@ -8,7 +8,7 @@ use Tests\Support\TestPermission;
 use Tests\Support\TestPermissionOther;
 use Tests\Support\TestRole;
 
-it('syncs roles from enum', function () {
+it('syncs roles from enum', function (): void {
     config(['dominion.role_enum' => TestRole::class]);
 
     $this->artisan('dominion:sync')
@@ -22,7 +22,7 @@ it('syncs roles from enum', function () {
         ->toBeTrue();
 });
 
-it('syncs permissions from multiple enums', function () {
+it('syncs permissions from multiple enums', function (): void {
     config(['dominion.permission_enums' => [
         TestPermission::class,
         TestPermissionOther::class,
@@ -43,7 +43,7 @@ it('syncs permissions from multiple enums', function () {
         ->toBeTrue();
 });
 
-it('does not make changes in dry-run mode', function () {
+it('does not make changes in dry-run mode', function (): void {
     config(['dominion.role_enum' => TestRole::class]);
     config(['dominion.permission_enums' => [TestPermission::class]]);
 
@@ -59,7 +59,7 @@ it('does not make changes in dry-run mode', function () {
         ->toBe(0);
 });
 
-it('prunes roles and permissions', function () {
+it('prunes roles and permissions', function (): void {
     Role::create(['name' => 'OLD_ROLE']);
     Permission::create(['name' => 'olds.permission']);
 
@@ -90,7 +90,7 @@ it('prunes roles and permissions', function () {
     // posts.create, posts.update
 });
 
-it('prunes in dry-run mode without deleting', function () {
+it('prunes in dry-run mode without deleting', function (): void {
     Role::create(['name' => 'OLD_ROLE']);
 
     config(['dominion.role_enum' => TestRole::class]);
@@ -103,7 +103,7 @@ it('prunes in dry-run mode without deleting', function () {
         ->toBeTrue();
 });
 
-it('outputs stub message for sync-pivots', function () {
+it('outputs stub message for sync-pivots', function (): void {
     $this->artisan('dominion:sync --sync-pivots')
         ->expectsOutput('Pivot syncing is currently a stub.');
 });

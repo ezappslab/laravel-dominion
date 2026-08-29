@@ -1,5 +1,13 @@
 <?php
 
+use Infinity\Dominion\Models\Permission;
+use Infinity\Dominion\Models\Role;
+use Infinity\Dominion\Policies\DefaultPolicy;
+use Infinity\Dominion\Services\DefaultAuthorizationResolver;
+use Infinity\Dominion\Services\DefaultPermissionValueResolver;
+use Infinity\Dominion\Services\DefaultRoleValueResolver;
+use Infinity\Dominion\Services\DefaultTenantContext;
+
 return [
 
     /*
@@ -68,8 +76,8 @@ return [
     */
 
     'models' => [
-        'role' => Infinity\Dominion\Models\Role::class,
-        'permission' => Infinity\Dominion\Models\Permission::class,
+        'role' => Role::class,
+        'permission' => Permission::class,
     ],
 
     /*
@@ -115,7 +123,7 @@ return [
     */
 
     'policy' => [
-        'class' => Infinity\Dominion\Policies\DefaultPolicy::class,
+        'class' => DefaultPolicy::class,
         'models' => [],
     ],
 
@@ -129,10 +137,10 @@ return [
     */
 
     'services' => [
-        'tenant_context' => Infinity\Dominion\Services\DefaultTenantContext::class,
-        'permission_value_resolver' => Infinity\Dominion\Services\DefaultPermissionValueResolver::class,
-        'role_value_resolver' => Infinity\Dominion\Services\DefaultRoleValueResolver::class,
-        'authorization_resolver' => Infinity\Dominion\Services\DefaultAuthorizationResolver::class,
+        'tenant_context' => DefaultTenantContext::class,
+        'permission_value_resolver' => DefaultPermissionValueResolver::class,
+        'role_value_resolver' => DefaultRoleValueResolver::class,
+        'authorization_resolver' => DefaultAuthorizationResolver::class,
     ],
 
 ];

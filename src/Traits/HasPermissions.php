@@ -10,7 +10,6 @@ use Infinity\Dominion\Contracts\PermissionValueResolver;
 use Infinity\Dominion\Contracts\TenantContext;
 use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Services\AuthorizationCache;
-use Workbench\App\Models\User;
 
 trait HasPermissions
 {
@@ -45,7 +44,7 @@ trait HasPermissions
      *                             a numeric value representing the ID, or a reference that can be resolved to a permission name.
      * @param  mixed  $tenantId  Optional. The tenant ID to scope the permission to. If not provided, the current tenant
      *                           from the TenantContext will be used.
-     * @return User|HasPermissions Returns the current instance for method chaining.
+     * @return self Returns the current instance for method chaining.
      *
      * @throws BindingResolutionException If the TenantContext binding cannot be resolved.
      * @throws CircularDependencyException If a circular dependency is detected during resolution.
@@ -75,7 +74,7 @@ trait HasPermissions
      * @param  mixed  $permission  The permission to deny. This can be an instance of the Permission model,
      *                             a numeric value representing the ID, or a reference that can be resolved to a permission name.
      * @param  mixed|null  $tenantId  The ID of the tenant for which the permission is denied. If null, the current tenant context is used.
-     * @return User|HasPermissions The current instance for method chaining.
+     * @return self The current instance for method chaining.
      *
      * @throws BindingResolutionException
      * @throws CircularDependencyException

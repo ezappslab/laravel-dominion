@@ -15,7 +15,7 @@ use Tests\Support\CustomTenantContext;
 use Tests\Support\TestPermission;
 use Tests\Support\TestRole;
 
-it('binds default services', function () {
+it('binds default services', function (): void {
     expect(app(TenantContext::class))
         ->toBeInstanceOf(DefaultTenantContext::class)
         ->and(app(PermissionValueResolver::class))
@@ -24,7 +24,7 @@ it('binds default services', function () {
         ->toBeInstanceOf(DefaultRoleValueResolver::class);
 });
 
-it('can override a service via config', function () {
+it('can override a service via config', function (): void {
     config(['dominion.services.tenant_context' => CustomTenantContext::class]);
 
     // Re-register or just check if it returns custom instance if we force it?
@@ -45,7 +45,7 @@ it('can override a service via config', function () {
         ->toBe(123);
 });
 
-it('normalizes permission enums', function () {
+it('normalizes permission enums', function (): void {
     $resolver = app(PermissionValueResolver::class);
 
     expect($resolver->resolve(TestPermission::CREATE))
@@ -54,7 +54,7 @@ it('normalizes permission enums', function () {
         ->toBe('posts.update');
 });
 
-it('normalizes role enums', function () {
+it('normalizes role enums', function (): void {
     $resolver = app(RoleValueResolver::class);
 
     expect($resolver->resolve(TestRole::ADMIN))
@@ -63,7 +63,7 @@ it('normalizes role enums', function () {
         ->toBe('EDITOR');
 });
 
-it('throws exception if service does not implement contract', closure: function () {
+it('throws exception if service does not implement contract', closure: function (): void {
     config(['dominion.services.tenant_context' => \stdClass::class]);
 
     // We need to trigger the validation.

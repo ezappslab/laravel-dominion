@@ -1,7 +1,7 @@
 <?php
 
-it('can load the config', function () {
-    $this->assertNotNull(config('dominion'));
-    $this->assertEquals('dominion', config('dominion.cache.prefix'));
-    $this->assertFalse(config('dominion.permission_enum_discovery.enabled'));
+it('can load the config', function (): void {
+    expect(config('dominion'))->not->toBeNull()
+        ->and(config('dominion.cache.prefix'))->toEqual('dominion')
+        ->and(config('dominion.permission_enum_discovery.enabled'))->toBeFalse();
 });

@@ -8,10 +8,11 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Infinity\Dominion\Traits\HasPermissions;
 use Infinity\Dominion\Traits\HasRoles;
+use Workbench\Database\Factories\UserFactory;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Workbench\Database\Factories\UserFactory> */
+    /** @use HasFactory<UserFactory> */
     use HasFactory, HasPermissions, HasRoles, Notifiable;
 
     /**

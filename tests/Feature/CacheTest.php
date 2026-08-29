@@ -8,12 +8,12 @@ use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
 use Workbench\App\Models\User;
 
-beforeEach(function () {
+beforeEach(function (): void {
     config(['dominion.cache.enabled' => true]);
     config(['dominion.cache.store' => 'array']);
 });
 
-it('caches authorization results', function () {
+it('caches authorization results', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -46,10 +46,10 @@ it('caches authorization results', function () {
     // AuthorizationCache::get('posts.edit') -> returns true from array cache.
     // So it should be ZERO queries.
 
-    expect($queries)->toHaveCount(0);
+    expect($queries)->toBeEmpty();
 });
 
-it('invalidates cache when role is added', function () {
+it('invalidates cache when role is added', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -70,7 +70,7 @@ it('invalidates cache when role is added', function () {
     expect($user->hasPermission('posts.edit'))->toBeTrue();
 });
 
-it('invalidates cache when role is removed', function () {
+it('invalidates cache when role is removed', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -92,7 +92,7 @@ it('invalidates cache when role is removed', function () {
     expect($user->hasPermission('posts.edit'))->toBeFalse();
 });
 
-it('invalidates cache when permission is allowed', function () {
+it('invalidates cache when permission is allowed', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -111,7 +111,7 @@ it('invalidates cache when permission is allowed', function () {
     expect($user->hasPermission('posts.edit'))->toBeTrue();
 });
 
-it('invalidates cache when permission is denied', function () {
+it('invalidates cache when permission is denied', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -131,7 +131,7 @@ it('invalidates cache when permission is denied', function () {
     expect($user->hasPermission('posts.edit'))->toBeFalse();
 });
 
-it('separates cache by tenant', function () {
+it('separates cache by tenant', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
