@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Cache;
 use Infinity\Dominion\Contracts\AuthorizationCache as AuthorizationCacheContract;
 use Infinity\Dominion\Domain\AuthorizationDecision;
 use Infinity\Dominion\Domain\AuthorizationScope;
+use Infinity\Dominion\Exceptions\InvalidCacheConfiguration;
 use Infinity\Dominion\Exceptions\InvalidPrincipal;
 
 class AuthorizationCache implements AuthorizationCacheContract
@@ -28,6 +29,11 @@ class AuthorizationCache implements AuthorizationCacheContract
     protected int $ttl;
 
     /**
+     * The cache lifetime for principal and catalog version tokens.
+     */
+    protected int $versionTtl;
+
+    /**
      * The prefix applied to Dominion cache keys.
      */
     protected string $prefix;
@@ -39,8 +45,13 @@ class AuthorizationCache implements AuthorizationCacheContract
     {
         $this->enabled = (bool) config('dominion.cache.enabled', true);
         $this->ttl = (int) config('dominion.cache.ttl', 300);
+        $this->versionTtl = (int) config('dominion.cache.version_ttl', 3600);
         $this->prefix = (string) config('dominion.cache.prefix', 'dominion');
         $this->cache = Cache::store(config('dominion.cache.store'));
+
+        if ($this->versionTtl <= $this->ttl) {
+            throw InvalidCacheConfiguration::unsafeVersionTtl($this->ttl, $this->versionTtl);
+        }
     }
 
     /**
@@ -125,7 +136,7 @@ class AuthorizationCache implements AuthorizationCacheContract
     }
 
     /**
-     * Get the current integer version for a cache key.
+     * Get the current version token for a cache key.
      */
     protected function version(string $key): string
     {
@@ -140,7 +151,7 @@ class AuthorizationCache implements AuthorizationCacheContract
     protected function rotateVersion(string $key): void
     {
         if ($this->enabled) {
-            $this->cache->forever($key, bin2hex(random_bytes(16)));
+            $this->cache->put($key, bin2hex(random_bytes(16)), $this->versionTtl);
         }
     }
 }

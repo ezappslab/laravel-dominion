@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Infinity\Dominion\Contracts\AuthorizationCache;
 use Infinity\Dominion\Domain\AuthorizationScope;
+use Infinity\Dominion\Exceptions\InvalidCacheConfiguration;
 use Infinity\Dominion\Exceptions\InvalidPrincipal;
 use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
@@ -217,4 +218,40 @@ it('rotates cache versions with a single atomic write', function (): void {
 
     expect($first)->toBeString()->not->toBe('initial')
         ->and($second)->toBeString()->not->toBe($first);
+});
+
+it('expires principal version tokens after the configured lifetime', function (): void {
+    config([
+        'dominion.cache.ttl' => 60,
+        'dominion.cache.version_ttl' => 120,
+    ]);
+    $this->app->forgetInstance(AuthorizationCache::class);
+
+    $user = User::create([
+        'name' => 'John Doe',
+        'email' => 'john@example.com',
+        'password' => Hash::make('password'),
+    ]);
+    $cache = app(AuthorizationCache::class);
+    $repository = Cache::store('array');
+    $key = 'dominion:principal-version:'.hash('sha256', $user->getMorphClass().'|'.$user->getKey());
+
+    $cache->invalidatePrincipal($user);
+
+    expect($repository->has($key))->toBeTrue();
+
+    $this->travel(121)->seconds();
+
+    expect($repository->has($key))->toBeFalse();
+});
+
+it('rejects version lifetimes that cannot safely outlive decisions', function (): void {
+    config([
+        'dominion.cache.ttl' => 300,
+        'dominion.cache.version_ttl' => 300,
+    ]);
+    $this->app->forgetInstance(AuthorizationCache::class);
+
+    expect(fn () => app(AuthorizationCache::class))
+        ->toThrow(InvalidCacheConfiguration::class, 'must be greater than the decision TTL');
 });

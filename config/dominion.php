@@ -144,6 +144,9 @@ return [
         // The number of seconds a computed decision remains cached.
         'ttl' => 300,
 
+        // Version tokens must outlive decisions so stale keys cannot reappear.
+        'version_ttl' => 3600,
+
         // Prefixes Dominion keys to avoid collisions with application data.
         'prefix' => 'dominion',
     ],
