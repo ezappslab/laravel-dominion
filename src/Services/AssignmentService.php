@@ -61,7 +61,13 @@ class AssignmentService
      */
     public function grant(Model $principal, mixed $permission, AuthorizationScope $scope): void
     {
-        $this->storePermissionEffect('permission_grants', $principal, $permission, $scope);
+        $this->storePermissionEffect(
+            'permission_grants',
+            'permission_denials',
+            $principal,
+            $permission,
+            $scope,
+        );
     }
 
     /**
@@ -69,7 +75,13 @@ class AssignmentService
      */
     public function deny(Model $principal, mixed $permission, AuthorizationScope $scope): void
     {
-        $this->storePermissionEffect('permission_denials', $principal, $permission, $scope);
+        $this->storePermissionEffect(
+            'permission_denials',
+            'permission_grants',
+            $principal,
+            $permission,
+            $scope,
+        );
     }
 
     /**
@@ -110,8 +122,13 @@ class AssignmentService
     /**
      * Persist a direct permission effect for the principal and scope.
      */
-    protected function storePermissionEffect(string $table, Model $principal, mixed $permission, AuthorizationScope $scope): void
-    {
+    protected function storePermissionEffect(
+        string $table,
+        string $oppositeTable,
+        Model $principal,
+        mixed $permission,
+        AuthorizationScope $scope,
+    ): void {
         $permissionName = $this->catalog->resolvePermission($permission);
         $permissionId = $this->permissionId($permissionName);
 
@@ -119,11 +136,17 @@ class AssignmentService
             throw new InvalidArgumentException("Permission [{$permissionName}] is not present in the Dominion catalog. Run dominion:sync first.");
         }
 
-        DB::table($table)->upsert(
-            [$this->identity($principal, $scope) + ['permission_id' => $permissionId] + $this->timestamps()],
-            ['permission_id', 'principal_type', 'principal_id', 'scope_key'],
-            ['updated_at'],
-        );
+        $identity = $this->identity($principal, $scope) + ['permission_id' => $permissionId];
+
+        DB::transaction(function () use ($table, $oppositeTable, $identity): void {
+            DB::table($oppositeTable)->where($identity)->delete();
+            DB::table($table)->upsert(
+                [$identity + $this->timestamps()],
+                ['permission_id', 'principal_type', 'principal_id', 'scope_key'],
+                ['updated_at'],
+            );
+        });
+
         $this->cache->invalidatePrincipal($principal);
     }
 
