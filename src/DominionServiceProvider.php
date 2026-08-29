@@ -2,13 +2,22 @@
 
 namespace Infinity\Dominion;
 
-use Illuminate\Contracts\Container\BindingResolutionException;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
 use Infinity\Dominion\Commands\SyncCommand;
+use Infinity\Dominion\Contracts\AuthorizationCache as AuthorizationCacheContract;
+use Infinity\Dominion\Contracts\AuthorizationCatalog;
 use Infinity\Dominion\Contracts\AuthorizationResolver;
 use Infinity\Dominion\Contracts\PermissionValueResolver;
 use Infinity\Dominion\Contracts\RoleValueResolver;
 use Infinity\Dominion\Contracts\TenantContext;
+use Infinity\Dominion\Domain\AuthorizationDecision;
+use Infinity\Dominion\Services\AuthorizationCache;
+use Infinity\Dominion\Services\DefaultAuthorizationResolver;
+use Infinity\Dominion\Services\DefaultPermissionValueResolver;
+use Infinity\Dominion\Services\DefaultRoleValueResolver;
+use Infinity\Dominion\Services\DefaultTenantContext;
+use Infinity\Dominion\Services\EnumAuthorizationCatalog;
 use RuntimeException;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
@@ -41,29 +50,12 @@ class DominionServiceProvider extends PackageServiceProvider
      */
     public function packageRegistered(): void
     {
-        $this->app->singleton(TenantContext::class, function ($app) {
-            $class = config('dominion.services.tenant_context');
-
-            return new $class;
-        });
-
-        $this->app->singleton(PermissionValueResolver::class, function ($app) {
-            $class = config('dominion.services.permission_value_resolver');
-
-            return new $class;
-        });
-
-        $this->app->singleton(RoleValueResolver::class, function ($app) {
-            $class = config('dominion.services.role_value_resolver');
-
-            return new $class;
-        });
-
-        $this->app->singleton(AuthorizationResolver::class, function ($app) {
-            $class = config('dominion.services.authorization_resolver');
-
-            return new $class;
-        });
+        $this->bindConfiguredSingleton(TenantContext::class, 'tenant_context');
+        $this->bindConfiguredSingleton(PermissionValueResolver::class, 'permission_value_resolver');
+        $this->bindConfiguredSingleton(RoleValueResolver::class, 'role_value_resolver');
+        $this->bindConfiguredSingleton(AuthorizationCatalog::class, 'authorization_catalog');
+        $this->bindConfiguredSingleton(AuthorizationResolver::class, 'authorization_resolver');
+        $this->app->singleton(AuthorizationCacheContract::class, AuthorizationCache::class);
     }
 
     /**
@@ -71,14 +63,17 @@ class DominionServiceProvider extends PackageServiceProvider
      *
      * This method ensures that the application's service layer is prepared by validating service implementations
      * and registering the necessary authorization policies.
-     *
-     * @throws BindingResolutionException
      */
     public function packageBooted(): void
     {
         $this->validateServiceImplementations();
-        $this->registerPolicies();
-        $this->registerGateBefore();
+        if ((bool) config('dominion.policy.enabled', true)) {
+            $this->registerPolicies();
+        }
+
+        if ((bool) config('dominion.gate.enabled', true)) {
+            $this->registerGateBefore();
+        }
     }
 
     /**
@@ -90,12 +85,22 @@ class DominionServiceProvider extends PackageServiceProvider
      */
     protected function registerGateBefore(): void
     {
-        Gate::before(function ($user, $ability) {
-            if (method_exists($user, 'hasPermission')) {
-                return $user->hasPermission($ability);
+        Gate::before(function (mixed $user, string $ability): ?bool {
+            if (! $user instanceof Model) {
+                return null;
             }
 
-            return null;
+            $decision = app(AuthorizationResolver::class)->decide(
+                $user,
+                $ability,
+                app(TenantContext::class)->currentScope(),
+            );
+
+            if ($decision === AuthorizationDecision::Abstain && config('dominion.gate.unknown_ability') === 'deny') {
+                return false;
+            }
+
+            return $decision->toGateResult();
         });
     }
 
@@ -110,8 +115,15 @@ class DominionServiceProvider extends PackageServiceProvider
         $policyClass = config('dominion.policy.class');
         $models = config('dominion.policy.models', []);
 
-        foreach ($models as $model) {
-            Gate::policy($model, $policyClass);
+        foreach ($models as $model => $configuredPolicy) {
+            if (is_int($model)) {
+                Gate::policy($configuredPolicy, $policyClass);
+
+                continue;
+            }
+
+            $policy = is_array($configuredPolicy) ? ($configuredPolicy['policy'] ?? $policyClass) : $configuredPolicy;
+            Gate::policy($model, $policy);
         }
     }
 
@@ -122,7 +134,7 @@ class DominionServiceProvider extends PackageServiceProvider
      * it resolves the service instance from the application container and checks if it implements the expected contract.
      * If a service does not implement its contract, an exception is thrown indicating the misconfiguration.
      *
-     * @throws RuntimeException|BindingResolutionException if a service does not implement its contract
+     * @throws RuntimeException if a service does not implement its contract
      */
     protected function validateServiceImplementations(): void
     {
@@ -131,14 +143,42 @@ class DominionServiceProvider extends PackageServiceProvider
             PermissionValueResolver::class => 'permission_value_resolver',
             RoleValueResolver::class => 'role_value_resolver',
             AuthorizationResolver::class => 'authorization_resolver',
+            AuthorizationCatalog::class => 'authorization_catalog',
         ];
 
         foreach ($services as $contract => $configKey) {
-            $implementation = config("dominion.services.{$configKey}");
+            $implementation = config("dominion.services.{$configKey}", $this->defaultService($configKey));
 
             if (! is_string($implementation) || ! is_a($implementation, $contract, true)) {
                 throw new RuntimeException("The configured service for 'dominion.services.{$configKey}' must implement {$contract}.");
             }
         }
+    }
+
+    /** @param  class-string  $contract */
+    protected function bindConfiguredSingleton(string $contract, string $configKey): void
+    {
+        $this->app->singleton($contract, function ($app) use ($configKey): object {
+            $class = config("dominion.services.{$configKey}", $this->defaultService($configKey));
+
+            if (! is_string($class)) {
+                throw new RuntimeException("The configured Dominion service [{$configKey}] must be a class name.");
+            }
+
+            return $app->make($class);
+        });
+    }
+
+    /** @return class-string */
+    protected function defaultService(string $configKey): string
+    {
+        return match ($configKey) {
+            'tenant_context' => DefaultTenantContext::class,
+            'permission_value_resolver' => DefaultPermissionValueResolver::class,
+            'role_value_resolver' => DefaultRoleValueResolver::class,
+            'authorization_catalog' => EnumAuthorizationCatalog::class,
+            'authorization_resolver' => DefaultAuthorizationResolver::class,
+            default => throw new RuntimeException("Unknown Dominion service [{$configKey}]."),
+        };
     }
 }

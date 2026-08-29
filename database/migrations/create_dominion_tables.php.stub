@@ -8,90 +8,57 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('roles', function (Blueprint $table) {
+        Schema::create('roles', function (Blueprint $table): void {
             $table->id();
             $table->string('name');
-            $table->string('guard_name')
-                ->nullable();
+            $table->string('guard_name')->default('web');
             $table->timestamps();
+            $table->unique(['name', 'guard_name']);
         });
 
-        Schema::create('permissions', function (Blueprint $table) {
+        Schema::create('permissions', function (Blueprint $table): void {
             $table->id();
             $table->string('name');
-            $table->string('guard_name')
-                ->nullable();
+            $table->string('guard_name')->default('web');
             $table->timestamps();
+            $table->unique(['name', 'guard_name']);
         });
 
-        Schema::create('permission_role', function (Blueprint $table) {
+        Schema::create('permission_role', function (Blueprint $table): void {
+            $table->foreignId('permission_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('role_id')->constrained()->cascadeOnDelete();
+            $table->timestamps();
+            $table->primary(['permission_id', 'role_id']);
+        });
+
+        $createAssignment = function (Blueprint $table, string $foreignKey, string $tableName): void {
             $table->id();
-            $table->foreignId('permission_id')
-                ->constrained()
-                ->cascadeOnDelete();
-            $table->foreignId('role_id')
-                ->constrained()
-                ->cascadeOnDelete();
+            $table->foreignId($foreignKey)->constrained()->cascadeOnDelete();
+            $table->morphs('principal');
+            $table->string('tenant_type')->nullable();
+            $table->string('tenant_id')->nullable();
+            $table->string('scope_key', 64)->default('global');
             $table->timestamps();
-        });
+            $table->unique(
+                [$foreignKey, 'principal_type', 'principal_id', 'scope_key'],
+                "{$tableName}_assignment_unique",
+            );
+            $table->index(
+                ['principal_type', 'principal_id', 'scope_key', $foreignKey],
+                "{$tableName}_lookup_index",
+            );
+        };
 
-        Schema::create('roleables', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('role_id')
-                ->constrained()
-                ->cascadeOnDelete();
-            $table->morphs('roleable');
-            $table->unsignedBigInteger('tenant_id')
-                ->nullable();
-            $table->timestamps();
-
-            $table->index([
-                'tenant_id',
-                'roleable_id',
-                'roleable_type',
-            ], 'roleables_tenant_morph_index');
-        });
-
-        Schema::create('permissionables', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('permission_id')
-                ->constrained()
-                ->cascadeOnDelete();
-            $table->morphs('permissionable');
-            $table->unsignedBigInteger('tenant_id')
-                ->nullable();
-            $table->timestamps();
-
-            $table->index([
-                'tenant_id',
-                'permissionable_id',
-                'permissionable_type',
-            ], 'permissionables_tenant_morph_index');
-        });
-
-        Schema::create('denied_permissionables', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('permission_id')
-                ->constrained()
-                ->cascadeOnDelete();
-            $table->morphs('permissionable');
-            $table->unsignedBigInteger('tenant_id')
-                ->nullable();
-            $table->timestamps();
-
-            $table->index([
-                'tenant_id',
-                'permissionable_id',
-                'permissionable_type',
-            ], 'denied_permissionables_tenant_morph_index');
-        });
+        Schema::create('role_assignments', fn (Blueprint $table) => $createAssignment($table, 'role_id', 'role'));
+        Schema::create('permission_grants', fn (Blueprint $table) => $createAssignment($table, 'permission_id', 'permission_grant'));
+        Schema::create('permission_denials', fn (Blueprint $table) => $createAssignment($table, 'permission_id', 'permission_denial'));
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('denied_permissionables');
-        Schema::dropIfExists('permissionables');
-        Schema::dropIfExists('roleables');
+        Schema::dropIfExists('permission_denials');
+        Schema::dropIfExists('permission_grants');
+        Schema::dropIfExists('role_assignments');
         Schema::dropIfExists('permission_role');
         Schema::dropIfExists('permissions');
         Schema::dropIfExists('roles');

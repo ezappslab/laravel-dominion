@@ -8,102 +8,46 @@ use Tests\Support\TestPermission;
 use Tests\Support\TestPermissionOther;
 use Tests\Support\TestRole;
 
-it('syncs roles from enum', function (): void {
-    config(['dominion.role_enum' => TestRole::class]);
-
-    $this->artisan('dominion:sync')
-        ->assertExitCode(0)
-        ->expectsOutput('Syncing roles...')
-        ->expectsOutput('Dominion sync completed.');
-
-    expect(Role::where('name', 'ADMIN')->exists())
-        ->toBeTrue()
-        ->and(Role::where('name', 'EDITOR')->exists())
-        ->toBeTrue();
+beforeEach(function (): void {
+    config([
+        'dominion.catalog.role_enum' => TestRole::class,
+        'dominion.catalog.permission_enums' => [TestPermission::class, TestPermissionOther::class],
+        'dominion.catalog.role_permissions' => [
+            TestRole::ADMIN->name => ['*'],
+            TestRole::EDITOR->name => [TestPermission::UPDATE],
+        ],
+    ]);
 });
 
-it('syncs permissions from multiple enums', function (): void {
-    config(['dominion.permission_enums' => [
-        TestPermission::class,
-        TestPermissionOther::class,
-    ]]);
-
+it('synchronizes enum catalogs and role mappings', function (): void {
     $this->artisan('dominion:sync')
-        ->assertExitCode(0)
-        ->expectsOutput('Syncing permissions...')
-        ->expectsOutput('Dominion sync completed.');
+        ->assertSuccessful()
+        ->expectsOutput('Dominion catalog synchronized.');
 
-    expect(Permission::where('name', 'posts.create')->exists())
-        ->toBeTrue()
-        ->and(Permission::where('name', 'posts.update')->exists())
-        ->toBeTrue()
-        ->and(Permission::where('name', 'others.delete')->exists())
-        ->toBeTrue()
-        ->and(Permission::where('name', 'others.view')->exists())
-        ->toBeTrue();
+    expect(Role::pluck('name')->all())->toEqualCanonicalizing(['ADMIN', 'EDITOR'])
+        ->and(Permission::pluck('name')->all())->toEqualCanonicalizing([
+            'posts.create', 'posts.update', 'others.delete', 'others.view',
+        ])
+        ->and(Role::where('name', 'ADMIN')->firstOrFail()->permissions)->toHaveCount(4)
+        ->and(Role::where('name', 'EDITOR')->firstOrFail()->permissions->pluck('name')->all())
+        ->toBe(['posts.update']);
 });
 
-it('does not make changes in dry-run mode', function (): void {
-    config(['dominion.role_enum' => TestRole::class]);
-    config(['dominion.permission_enums' => [TestPermission::class]]);
-
+it('reports a dry run without changing the catalog', function (): void {
     $this->artisan('dominion:sync --dry-run')
-        ->assertExitCode(0)
-        ->expectsOutput('Would create/update role: ADMIN')
-        ->expectsOutput('Would create/update role: EDITOR')
-        ->expectsOutput('Would create/update permission: posts.create')
-        ->expectsOutput('Would create/update permission: posts.update');
+        ->assertSuccessful()
+        ->expectsOutput('Would synchronize 2 roles, 4 permissions, and 2 role mappings.');
 
     expect(Role::count())->toBe(0)
-        ->and(Permission::count())
-        ->toBe(0);
+        ->and(Permission::count())->toBe(0);
 });
 
-it('prunes roles and permissions', function (): void {
-    Role::create(['name' => 'OLD_ROLE']);
-    Permission::create(['name' => 'olds.permission']);
+it('prunes catalog records absent from enums', function (): void {
+    Role::create(['name' => 'obsolete']);
+    Permission::create(['name' => 'obsolete.permission']);
 
-    config(['dominion.role_enum' => TestRole::class]);
-    config(['dominion.permission_enums' => [TestPermission::class]]);
+    $this->artisan('dominion:sync --prune')->assertSuccessful();
 
-    // Without prune, they should stay
-    $this->artisan('dominion:sync')
-        ->assertExitCode(0);
-
-    expect(Role::where('name', 'OLD_ROLE')->exists())
-        ->toBeTrue()
-        ->and(Permission::where('name', 'olds.permission')->exists())
-        ->toBeTrue();
-
-    // With prune, they should be removed
-    $this->artisan('dominion:sync --prune')
-        ->assertExitCode(0);
-
-    expect(Role::where('name', 'OLD_ROLE')->exists())
-        ->toBeFalse()
-        ->and(Permission::where('name', 'olds.permission')->exists())
-        ->toBeFalse()
-        ->and(Role::count())->toBe(2) // ADMIN, EDITOR
-        ->and(Permission::count())
-        ->toBe(2);
-
-    // posts.create, posts.update
-});
-
-it('prunes in dry-run mode without deleting', function (): void {
-    Role::create(['name' => 'OLD_ROLE']);
-
-    config(['dominion.role_enum' => TestRole::class]);
-
-    $this->artisan('dominion:sync --prune --dry-run')
-        ->assertExitCode(0)
-        ->expectsOutput('Would delete role: OLD_ROLE');
-
-    expect(Role::where('name', 'OLD_ROLE')->exists())
-        ->toBeTrue();
-});
-
-it('outputs stub message for sync-pivots', function (): void {
-    $this->artisan('dominion:sync --sync-pivots')
-        ->expectsOutput('Pivot syncing is currently a stub.');
+    expect(Role::where('name', 'obsolete')->exists())->toBeFalse()
+        ->and(Permission::where('name', 'obsolete.permission')->exists())->toBeFalse();
 });

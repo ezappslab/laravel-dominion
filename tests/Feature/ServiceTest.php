@@ -41,8 +41,8 @@ it('can override a service via config', function (): void {
 
     expect(app(TenantContext::class))
         ->toBeInstanceOf(CustomTenantContext::class)
-        ->and(app(TenantContext::class)->getTenantId())
-        ->toBe(123);
+        ->and(app(TenantContext::class)->currentScope()->tenantId)
+        ->toBe('123');
 });
 
 it('normalizes permission enums', function (): void {

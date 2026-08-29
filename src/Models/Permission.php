@@ -4,7 +4,9 @@ namespace Infinity\Dominion\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Infinity\Dominion\Services\ModelRegistry;
 
+/** @property string $name */
 class Permission extends Model
 {
     /**
@@ -22,7 +24,7 @@ class Permission extends Model
      */
     public function roles(): BelongsToMany
     {
-        return $this->belongsToMany(Role::class, 'permission_role')
+        return $this->belongsToMany(app(ModelRegistry::class)->roleModel(), 'permission_role')
             ->withTimestamps();
     }
 }

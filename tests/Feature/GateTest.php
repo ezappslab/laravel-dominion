@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Hash;
 use Infinity\Dominion\Contracts\TenantContext;
+use Infinity\Dominion\Domain\AuthorizationScope;
 use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
 use Workbench\App\Models\User;
@@ -78,8 +79,8 @@ it('is tenant-aware in Gate::before', function (): void {
 
     // Mock tenant context to 1
     $this->mock(TenantContext::class)
-        ->shouldReceive('getTenantId')
-        ->andReturn(1);
+        ->shouldReceive('currentScope')
+        ->andReturn(AuthorizationScope::tenant(1));
 
     expect($user->can('posts.update'))->toBeTrue();
 

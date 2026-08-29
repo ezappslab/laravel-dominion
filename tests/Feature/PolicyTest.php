@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 use Infinity\Dominion\Contracts\TenantContext;
+use Infinity\Dominion\Domain\AuthorizationScope;
 use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
 use Tests\Support\Post;
@@ -30,6 +31,22 @@ it('authorizes via policy correctly', function (): void {
     $user->allow('posts.update');
 
     expect($user->can('posts.update', $post))->toBeTrue();
+});
+
+it('maps standard policy abilities to table permissions', function (): void {
+    Gate::policy(Post::class, config('dominion.policy.class'));
+
+    $user = User::create([
+        'name' => 'John Doe',
+        'email' => 'policy@example.com',
+        'password' => Hash::make('password'),
+    ]);
+    $post = new Post;
+
+    Permission::create(['name' => 'posts.update']);
+    $user->allow('posts.update');
+
+    expect($user->can('update', $post))->toBeTrue();
 });
 
 it('authorizes via policy with roles', function (): void {
@@ -77,14 +94,14 @@ it('is tenant aware via policy', function (): void {
     expect($user->can('posts.view', $post))->toBeFalse();
 
     $this->mock(TenantContext::class)
-        ->shouldReceive('getTenantId')
-        ->andReturn(1);
+        ->shouldReceive('currentScope')
+        ->andReturn(AuthorizationScope::tenant(1));
 
     expect($user->can('posts.view', $post))->toBeTrue();
 
     $this->mock(TenantContext::class)
-        ->shouldReceive('getTenantId')
-        ->andReturn(2);
+        ->shouldReceive('currentScope')
+        ->andReturn(AuthorizationScope::tenant(2));
 
     expect($user->can('posts.view', $post))->toBeFalse();
 });

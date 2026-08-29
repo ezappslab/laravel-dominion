@@ -4,7 +4,10 @@ namespace Infinity\Dominion\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Infinity\Dominion\Contracts\AuthorizationCache;
+use Infinity\Dominion\Services\ModelRegistry;
 
+/** @property string $name */
 class Role extends Model
 {
     /**
@@ -22,7 +25,22 @@ class Role extends Model
      */
     public function permissions(): BelongsToMany
     {
-        return $this->belongsToMany(Permission::class, 'permission_role')
+        return $this->belongsToMany(app(ModelRegistry::class)->permissionModel(), 'permission_role')
             ->withTimestamps();
+    }
+
+    /** @param  iterable<int, int|Permission>  $permissions */
+    public function syncPermissions(iterable $permissions): self
+    {
+        $ids = [];
+
+        foreach ($permissions as $permission) {
+            $ids[] = $permission instanceof Permission ? $permission->getKey() : $permission;
+        }
+
+        $this->permissions()->sync($ids);
+        app(AuthorizationCache::class)->invalidateCatalog();
+
+        return $this;
     }
 }

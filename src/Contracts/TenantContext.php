@@ -2,10 +2,12 @@
 
 namespace Infinity\Dominion\Contracts;
 
+use Infinity\Dominion\Domain\AuthorizationScope;
+
 interface TenantContext
 {
     /**
-     * Get the current tenant identifier.
+     * Resolve the authorization scope for the current request or process.
      */
-    public function getTenantId(): mixed;
+    public function currentScope(): AuthorizationScope;
 }

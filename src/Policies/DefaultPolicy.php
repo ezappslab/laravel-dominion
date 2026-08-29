@@ -19,14 +19,14 @@ class DefaultPolicy
         $user = $arguments[0] ?? null;
         $model = $arguments[1] ?? null;
 
-        if (! $user instanceof Model || ! method_exists($user, 'hasPermission')) {
+        if (! $user instanceof Model) {
             return false;
         }
 
-        $tenantId = app(TenantContext::class)->getTenantId();
+        $scope = app(TenantContext::class)->currentScope();
         $permission = $this->resolvePermissionName($ability, $model);
 
-        return app(AuthorizationResolver::class)->hasPermission($user, $permission, $tenantId);
+        return app(AuthorizationResolver::class)->hasPermission($user, $permission, $scope);
     }
 
     /**

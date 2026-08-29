@@ -2,118 +2,72 @@
 
 namespace Infinity\Dominion\Traits;
 
-use Illuminate\Contracts\Container\BindingResolutionException;
-use Illuminate\Contracts\Container\CircularDependencyException;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
-use Infinity\Dominion\Contracts\RoleValueResolver;
-use Infinity\Dominion\Contracts\TenantContext;
-use Infinity\Dominion\Models\Role;
-use Infinity\Dominion\Services\AuthorizationCache;
+use Infinity\Dominion\Contracts\AuthorizationCatalog;
+use Infinity\Dominion\Domain\AuthorizationScope;
+use Infinity\Dominion\Services\AssignmentService;
+use Infinity\Dominion\Services\ModelRegistry;
 
 trait HasRoles
 {
+    use ResolvesAuthorizationScope;
+
     /**
-     * Defines a polymorphic many-to-many relationship between the current instance and roles.
-     *
-     * @return MorphToMany A relationship object representing the associated roles.
+     * Get every role assigned to this principal across all scopes.
      */
     public function roles(): MorphToMany
     {
-        return $this->morphToMany(Role::class, 'roleable', 'roleables')
-            ->withPivot('tenant_id')
+        return $this->morphToMany(app(ModelRegistry::class)->roleModel(), 'principal', 'role_assignments')
+            ->withPivot(['tenant_type', 'tenant_id', 'scope_key'])
             ->withTimestamps();
     }
 
     /**
-     * Assigns a role to the current instance with an optional tenant context.
-     *
-     * @param  mixed  $role  The role to be added. It can be an identifier or an object representing the role.
-     * @param  mixed|null  $tenantId  The tenant identifier. If not provided, the current tenant context will be used.
-     * @return self Returns the current instance for method chaining.
-     *
-     * @throws BindingResolutionException
-     * @throws CircularDependencyException
+     * Assign a role in the current, explicit tenant, or global scope.
      */
-    public function addRole(mixed $role, mixed $tenantId = null): self
+    public function assignRole(mixed $role, AuthorizationScope|Model|string|int|null $tenant = null): self
     {
-        $roleId = $this->resolveRoleId($role);
-        $tenantId = $tenantId ?? app(TenantContext::class)->getTenantId();
-
-        $this->roles()->attach($roleId, [
-            'tenant_id' => $tenantId,
-        ]);
-
-        app(AuthorizationCache::class)->flushFor($this, $tenantId);
+        app(AssignmentService::class)->assignRole($this, $role, $this->authorizationScope($tenant));
 
         return $this;
     }
 
     /**
-     * Remove the given role from the model.
-     *
-     * @param  mixed  $role  The role to be removed. Can be a role instance, ID, or name.
-     * @param  mixed|null  $tenantId  The identifier of the tenant context. If null, the current tenant context is used.
-     * @return self The current instance of the model, for method chaining.
-     *
-     * @throws BindingResolutionException
-     * @throws CircularDependencyException
+     * Backward-compatible alias for assigning a role.
      */
-    public function removeRole(mixed $role, mixed $tenantId = null): self
+    public function addRole(mixed $role, AuthorizationScope|Model|string|int|null $tenant = null): self
     {
-        $roleId = $this->resolveRoleId($role);
-        $tenantId = $tenantId ?? app(TenantContext::class)->getTenantId();
+        return $this->assignRole($role, $tenant);
+    }
 
-        $this->roles()
-            ->wherePivot('tenant_id', $tenantId)
-            ->detach($roleId);
-
-        app(AuthorizationCache::class)->flushFor($this, $tenantId);
+    /**
+     * Remove a role from the selected scope.
+     */
+    public function removeRole(mixed $role, AuthorizationScope|Model|string|int|null $tenant = null): self
+    {
+        app(AssignmentService::class)->removeRole($this, $role, $this->authorizationScope($tenant));
 
         return $this;
     }
 
     /**
-     * Check if the model has the specified role.
-     *
-     * @param  mixed  $role  The role to check, which can be the role's identifier or instance.
-     * @param  mixed  $tenantId  The tenant identifier. If null, the current tenant context is used.
-     * @return bool Returns true if the model has the specified role, otherwise false.
-     *
-     * @throws BindingResolutionException
-     * @throws CircularDependencyException
+     * Determine whether the role applies in the selected scope.
      */
-    public function hasRole(mixed $role, mixed $tenantId = null): bool
+    public function hasRole(mixed $role, AuthorizationScope|Model|string|int|null $tenant = null): bool
     {
-        $roleId = $this->resolveRoleId($role);
-        $tenantId = $tenantId ?? app(TenantContext::class)->getTenantId();
+        $scope = $this->authorizationScope($tenant);
+        $scopeKeys = [$scope->key()];
+
+        if (! $scope->isGlobal() && (bool) config('dominion.tenancy.global_inherits_into_tenant', true)) {
+            $scopeKeys[] = AuthorizationScope::global()->key();
+        }
+
+        $roleName = app(AuthorizationCatalog::class)->resolveRole($role);
 
         return $this->roles()
-            ->where('roles.id', $roleId)
-            ->wherePivot('tenant_id', $tenantId)
+            ->where('roles.name', $roleName)
+            ->wherePivotIn('scope_key', $scopeKeys)
             ->exists();
-    }
-
-    /**
-     * Resolves the role identifier from the provided role input.
-     *
-     * @param  mixed  $role  The role input, which can be a Role instance, a numeric ID, or a role name.
-     * @return int The resolved role ID.
-     *
-     * @throws BindingResolutionException
-     * @throws CircularDependencyException
-     */
-    protected function resolveRoleId(mixed $role): int
-    {
-        if ($role instanceof Role) {
-            return $role->id;
-        }
-
-        if (is_numeric($role)) {
-            return (int) $role;
-        }
-
-        $roleName = app(RoleValueResolver::class)->resolve($role);
-
-        return Role::where('name', $roleName)->firstOrFail()->id;
     }
 }

@@ -5,10 +5,11 @@ namespace Infinity\Dominion\Services;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
-use Infinity\Dominion\Contracts\PermissionValueResolver;
-use Infinity\Dominion\Models\Permission;
+use Infinity\Dominion\Contracts\AuthorizationCache as AuthorizationCacheContract;
+use Infinity\Dominion\Domain\AuthorizationDecision;
+use Infinity\Dominion\Domain\AuthorizationScope;
 
-class AuthorizationCache
+class AuthorizationCache implements AuthorizationCacheContract
 {
     protected Repository $cache;
 
@@ -20,126 +21,81 @@ class AuthorizationCache
 
     public function __construct()
     {
-        $this->enabled = config('dominion.cache.enabled', true);
-        $this->ttl = config('dominion.cache.ttl', 300);
-        $this->prefix = config('dominion.cache.prefix', 'dominion');
+        $this->enabled = (bool) config('dominion.cache.enabled', true);
+        $this->ttl = (int) config('dominion.cache.ttl', 300);
+        $this->prefix = (string) config('dominion.cache.prefix', 'dominion');
         $this->cache = Cache::store(config('dominion.cache.store'));
     }
 
-    public function isEnabled(): bool
-    {
-        return $this->enabled;
-    }
-
-    public function get(Model $model, mixed $permission, mixed $tenantId): ?bool
+    /**
+     * Retrieve a cached decision for the current principal and catalog versions.
+     */
+    public function get(Model $principal, string $permission, AuthorizationScope $scope): ?AuthorizationDecision
     {
         if (! $this->enabled) {
             return null;
         }
 
-        $key = $this->buildKey($model, $permission, $tenantId);
+        $value = $this->cache->get($this->decisionKey($principal, $permission, $scope));
 
-        if ($this->supportsTags()) {
-            return $this->cache->tags($this->getTags($model, $tenantId))->get($key);
-        }
-
-        return $this->cache->get($key);
+        return is_string($value) ? AuthorizationDecision::tryFrom($value) : null;
     }
 
-    public function put(Model $model, mixed $permission, mixed $tenantId, bool $result): void
+    /**
+     * Store a decision without relying on cache-tag support.
+     */
+    public function put(Model $principal, string $permission, AuthorizationScope $scope, AuthorizationDecision $decision): void
     {
-        if (! $this->enabled) {
-            return;
-        }
-
-        $key = $this->buildKey($model, $permission, $tenantId);
-
-        if ($this->supportsTags()) {
-            $this->cache->tags($this->getTags($model, $tenantId))->put($key, $result, $this->ttl);
-        } else {
-            $this->cache->put($key, $result, $this->ttl);
+        if ($this->enabled) {
+            $this->cache->put($this->decisionKey($principal, $permission, $scope), $decision->value, $this->ttl);
         }
     }
 
-    public function flushFor(Model $model, mixed $tenantId): void
+    /**
+     * Advance the principal version so existing decision keys become stale.
+     */
+    public function invalidatePrincipal(Model $principal): void
     {
-        if (! $this->enabled) {
-            return;
-        }
-
-        if ($this->supportsTags()) {
-            $this->cache->tags($this->getTags($model, $tenantId))->flush();
-        } else {
-            // Fallback: we can't easily clear by prefix without more complex logic or custom implementation
-            // The requirements say: "clear all keys matching the principal prefix (acceptable tradeoff)"
-            // But standard Laravel Cache repository doesn't support clearing by prefix.
-            // Some stores might, but Repository interface doesn't.
-            // If we don't have tags, and we want to "clear all keys matching the principal prefix",
-            // we might have to just clear the whole cache if we don't have a better way,
-            // OR we just accept that without tags, invalidation is harder.
-
-            // Re-reading requirements: "clear all keys matching the principal prefix (acceptable tradeoff)"
-            // In Laravel, without tags, there is no built-in way to clear by prefix across all drivers.
-            // If the user uses 'file' or 'database' or 'redis' (without tags), they are out of luck for granular invalidation.
-
-            // Actually, if they use 'redis', they could. But we should stick to Repository interface.
-            // If they use a store that doesn't support tags, maybe we should just clear the whole store or do nothing?
-            // "Correctness > performance"
-
-            // If I can't clear by prefix, I should at least try to be correct.
-            // Most people will use 'redis' or 'memcached' which support tags.
-            // If they use 'array' (for tests), it DOES NOT support tags by default in Laravel unless it's the 'array' store?
-            // Actually, 'array' and 'redis', 'memcached' support tags. 'file' and 'database' do not.
-
-            // If no tags, maybe we just clear everything? That might be too aggressive.
-            // But better than returning stale data.
-
-            $this->cache->flush();
-        }
+        $this->incrementVersion($this->principalVersionKey($principal));
     }
 
-    protected function buildKey(Model $model, mixed $permission, mixed $tenantId): string
+    /**
+     * Advance the shared catalog version after enum or role-map changes.
+     */
+    public function invalidateCatalog(): void
     {
-        $principalType = $model->getMorphClass();
-        $principalId = $model->getKey();
-        $tenant = $tenantId ?? 'global';
-        $permissionName = $this->normalizePermission($permission);
-
-        return "{$this->prefix}:auth:{$principalType}:{$principalId}:{$tenant}:{$permissionName}";
+        $this->incrementVersion($this->catalogVersionKey());
     }
 
-    protected function getTags(Model $model, mixed $tenantId): array
+    protected function decisionKey(Model $principal, string $permission, AuthorizationScope $scope): string
     {
-        $principalType = $model->getMorphClass();
-        $principalId = $model->getKey();
-        $tenant = $tenantId ?? 'global';
+        $identity = $principal->getMorphClass().'|'.$principal->getKey();
+        $principalVersion = $this->version($this->principalVersionKey($principal));
+        $catalogVersion = $this->version($this->catalogVersionKey());
+        $digest = hash('sha256', $identity.'|'.$scope->key().'|'.$permission);
 
-        return [
-            "{$this->prefix}:principal:{$principalType}:{$principalId}",
-            "{$this->prefix}:tenant:{$tenant}",
-            "{$this->prefix}:principal:{$principalType}:{$principalId}:{$tenant}",
-        ];
+        return "{$this->prefix}:decision:{$catalogVersion}:{$principalVersion}:{$digest}";
     }
 
-    protected function supportsTags(): bool
+    protected function principalVersionKey(Model $principal): string
     {
-        return method_exists($this->cache, 'tags');
+        return "{$this->prefix}:principal-version:".hash('sha256', $principal->getMorphClass().'|'.$principal->getKey());
     }
 
-    protected function normalizePermission(mixed $permission): string
+    protected function catalogVersionKey(): string
     {
-        if ($permission instanceof Permission) {
-            return $permission->name;
+        return "{$this->prefix}:catalog-version";
+    }
+
+    protected function version(string $key): int
+    {
+        return (int) $this->cache->get($key, 1);
+    }
+
+    protected function incrementVersion(string $key): void
+    {
+        if ($this->enabled) {
+            $this->cache->forever($key, $this->version($key) + 1);
         }
-
-        if (is_numeric($permission)) {
-            // If it's an ID, we might need to resolve it to name for a stable key as per requirements
-            // "permission must be normalized string"
-            $p = Permission::find($permission);
-
-            return $p ? $p->name : (string) $permission;
-        }
-
-        return app(PermissionValueResolver::class)->resolve($permission);
     }
 }

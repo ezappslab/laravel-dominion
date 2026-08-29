@@ -3,11 +3,12 @@
 namespace Tests\Support;
 
 use Infinity\Dominion\Contracts\TenantContext;
+use Infinity\Dominion\Domain\AuthorizationScope;
 
 class CustomTenantContext implements TenantContext
 {
-    public function getTenantId(): mixed
+    public function currentScope(): AuthorizationScope
     {
-        return 123;
+        return AuthorizationScope::tenant(123);
     }
 }
