@@ -2,8 +2,11 @@
 
 namespace Tests\Feature;
 
+use Infinity\Dominion\Contracts\AuthorizationCatalog;
+use Infinity\Dominion\Exceptions\InvalidCatalogConfiguration;
 use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
+use Tests\Support\TestDuplicatePermission;
 use Tests\Support\TestPermission;
 use Tests\Support\TestPermissionOther;
 use Tests\Support\TestRole;
@@ -50,4 +53,39 @@ it('prunes catalog records absent from enums', function (): void {
 
     expect(Role::where('name', 'obsolete')->exists())->toBeFalse()
         ->and(Permission::where('name', 'obsolete.permission')->exists())->toBeFalse();
+});
+
+it('rejects invalid permission enum classes', function (): void {
+    config(['dominion.catalog.permission_enums' => ['App\\Enums\\MissingPermission']]);
+
+    expect(fn () => app(AuthorizationCatalog::class)->permissions())
+        ->toThrow(InvalidCatalogConfiguration::class, '[App\\Enums\\MissingPermission] is not an enum class.');
+});
+
+it('rejects duplicate permission values across enums', function (): void {
+    config(['dominion.catalog.permission_enums' => [TestPermission::class, TestDuplicatePermission::class]]);
+
+    expect(fn () => app(AuthorizationCatalog::class)->permissions())
+        ->toThrow(InvalidCatalogConfiguration::class, 'permission or role value [posts.create] is declared more than once.');
+});
+
+it('rejects roles absent from the configured enum', function (): void {
+    config(['dominion.catalog.role_permissions' => ['OWNER' => [TestPermission::CREATE]]]);
+
+    expect(fn () => app(AuthorizationCatalog::class)->rolePermissions())
+        ->toThrow(InvalidCatalogConfiguration::class, 'role [OWNER] is not declared by the configured role enum.');
+});
+
+it('rejects permissions absent from the configured enums', function (): void {
+    config(['dominion.catalog.role_permissions' => [TestRole::EDITOR->name => ['posts.delete']]]);
+
+    expect(fn () => app(AuthorizationCatalog::class)->rolePermissions())
+        ->toThrow(InvalidCatalogConfiguration::class, 'permission [posts.delete] for role [EDITOR] is not declared');
+});
+
+it('rejects wildcard mappings combined with explicit permissions', function (): void {
+    config(['dominion.catalog.role_permissions' => [TestRole::ADMIN->name => ['*', TestPermission::CREATE]]]);
+
+    expect(fn () => app(AuthorizationCatalog::class)->rolePermissions())
+        ->toThrow(InvalidCatalogConfiguration::class, 'wildcard for role [ADMIN] must be the only permission value.');
 });
