@@ -8,8 +8,8 @@ use Infinity\Dominion\Contracts\AuthorizationResolver;
 use Infinity\Dominion\Domain\AuthorizationDecision;
 use Infinity\Dominion\Domain\AuthorizationScope;
 use Infinity\Dominion\Services\AssignmentService;
+use Infinity\Dominion\Services\ConfigurationValidator;
 use Infinity\Dominion\Services\ModelRegistry;
-use InvalidArgumentException;
 
 trait HasPermissions
 {
@@ -104,12 +104,7 @@ trait HasPermissions
         string $profile,
         AuthorizationScope|Model|string|int|null $tenant = null,
     ): self {
-        $profiles = config('dominion.profiles', []);
-        $definition = $profiles[$profile] ?? null;
-
-        if (! is_array($definition)) {
-            throw new InvalidArgumentException("Dominion authorization profile [{$profile}] is not configured.");
-        }
+        $definition = app(ConfigurationValidator::class)->profile($profile);
 
         app(AssignmentService::class)->applyProfile($this, $definition, $this->authorizationScope($tenant));
 

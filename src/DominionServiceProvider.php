@@ -13,6 +13,7 @@ use Infinity\Dominion\Contracts\RoleValueResolver;
 use Infinity\Dominion\Contracts\TenantContext;
 use Infinity\Dominion\Domain\AuthorizationDecision;
 use Infinity\Dominion\Services\AuthorizationCache;
+use Infinity\Dominion\Services\ConfigurationValidator;
 use Infinity\Dominion\Services\DefaultAuthorizationResolver;
 use Infinity\Dominion\Services\DefaultPermissionValueResolver;
 use Infinity\Dominion\Services\DefaultRoleValueResolver;
@@ -70,6 +71,9 @@ class DominionServiceProvider extends PackageServiceProvider
     public function packageBooted(): void
     {
         $this->validateServiceImplementations();
+        app(ConfigurationValidator::class)->validateProfiles();
+        app(ConfigurationValidator::class)->validatePolicy();
+
         if ((bool) config('dominion.policy.enabled', true)) {
             $this->registerPolicies();
         }
