@@ -15,8 +15,16 @@ it('can run the migrations', function (): void {
 
 it('checks the roles table if it has expected columns', function (): void {
     expect(Schema::hasColumns('roles', [
-        'id', 'name', 'guard_name', 'created_at', 'updated_at',
-    ]))->toBeTrue();
+        'id', 'name', 'created_at', 'updated_at',
+    ]))->toBeTrue()
+        ->and(Schema::hasColumn('roles', 'guard_name'))->toBeFalse();
+});
+
+it('checks the permissions table if it has expected columns', function (): void {
+    expect(Schema::hasColumns('permissions', [
+        'id', 'name', 'created_at', 'updated_at',
+    ]))->toBeTrue()
+        ->and(Schema::hasColumn('permissions', 'guard_name'))->toBeFalse();
 });
 
 it('checks the role assignments table if it has expected columns', function (): void {

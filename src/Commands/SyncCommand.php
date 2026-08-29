@@ -51,11 +51,11 @@ class SyncCommand extends Command
             $permissionModel = $models->permissionModel();
 
             foreach ($roles as $role) {
-                $roleModel::query()->firstOrCreate(['name' => $role, 'guard_name' => 'web']);
+                $roleModel::query()->firstOrCreate(['name' => $role]);
             }
 
             foreach ($permissions as $permission) {
-                $permissionModel::query()->firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
+                $permissionModel::query()->firstOrCreate(['name' => $permission]);
             }
 
             foreach ($map as $roleName => $permissionNames) {

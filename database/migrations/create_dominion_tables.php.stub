@@ -10,18 +10,14 @@ return new class extends Migration
     {
         Schema::create('roles', function (Blueprint $table): void {
             $table->id();
-            $table->string('name');
-            $table->string('guard_name')->default('web');
+            $table->string('name')->unique();
             $table->timestamps();
-            $table->unique(['name', 'guard_name']);
         });
 
         Schema::create('permissions', function (Blueprint $table): void {
             $table->id();
-            $table->string('name');
-            $table->string('guard_name')->default('web');
+            $table->string('name')->unique();
             $table->timestamps();
-            $table->unique(['name', 'guard_name']);
         });
 
         Schema::create('permission_role', function (Blueprint $table): void {
