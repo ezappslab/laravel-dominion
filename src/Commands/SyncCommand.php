@@ -10,12 +10,21 @@ use Infinity\Dominion\Services\ModelRegistry;
 
 class SyncCommand extends Command
 {
+    /**
+     * The name and signature of the console command.
+     */
     protected $signature = 'dominion:sync
                             {--dry-run : Display changes without applying them}
                             {--prune : Delete catalog entries absent from the configured enums}';
 
+    /**
+     * The console command description.
+     */
     protected $description = 'Synchronize Dominion roles, permissions, and role mappings from application enums';
 
+    /**
+     * Execute the console command.
+     */
     public function handle(
         AuthorizationCatalog $catalog,
         ModelRegistry $models,
@@ -73,6 +82,8 @@ class SyncCommand extends Command
     }
 
     /**
+     * Display the catalog synchronization summary.
+     *
      * @param  list<string>  $roles
      * @param  list<string>  $permissions
      * @param  array<string, list<string>>  $map

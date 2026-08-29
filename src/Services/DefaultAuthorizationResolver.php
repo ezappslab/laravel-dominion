@@ -12,12 +12,18 @@ use Infinity\Dominion\Domain\AuthorizationScope;
 
 class DefaultAuthorizationResolver implements AuthorizationResolver
 {
+    /**
+     * Create a new authorization resolver instance.
+     */
     public function __construct(
         protected AuthorizationCatalog $catalog,
         protected AuthorizationCache $cache,
         protected ModelRegistry $models,
     ) {}
 
+    /**
+     * Resolve and cache the authorization decision for a permission.
+     */
     public function decide(Model $model, mixed $permission, AuthorizationScope $scope): AuthorizationDecision
     {
         $permissionName = $this->catalog->resolvePermission($permission);
@@ -33,11 +39,17 @@ class DefaultAuthorizationResolver implements AuthorizationResolver
         return $decision;
     }
 
+    /**
+     * Determine whether the principal is allowed the permission.
+     */
     public function hasPermission(Model $model, mixed $permission, AuthorizationScope $scope): bool
     {
         return $this->decide($model, $permission, $scope) === AuthorizationDecision::Allow;
     }
 
+    /**
+     * Resolve a decision from direct and role-based assignments.
+     */
     protected function resolve(Model $principal, string $permission, AuthorizationScope $scope): AuthorizationDecision
     {
         $permissionModel = $this->models->permissionModel();
@@ -71,7 +83,12 @@ class DefaultAuthorizationResolver implements AuthorizationResolver
         return $rolePermission ? AuthorizationDecision::Allow : AuthorizationDecision::Deny;
     }
 
-    /** @param  array{principal_type: string, principal_id: mixed}  $identity */
+    /**
+     * Determine whether a matching scoped assignment exists.
+     *
+     * @param  array{principal_type: string, principal_id: mixed}  $identity
+     * @param  list<string>  $scopeKeys
+     */
     protected function assignmentExists(
         string $table,
         array $identity,
@@ -86,7 +103,11 @@ class DefaultAuthorizationResolver implements AuthorizationResolver
             ->exists();
     }
 
-    /** @return list<string> */
+    /**
+     * Get the applicable scope keys for an authorization check.
+     *
+     * @return list<string>
+     */
     protected function scopeKeys(AuthorizationScope $scope): array
     {
         if ($scope->isGlobal()) {

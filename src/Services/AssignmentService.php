@@ -11,6 +11,9 @@ use InvalidArgumentException;
 
 class AssignmentService
 {
+    /**
+     * Create a new assignment service instance.
+     */
     public function __construct(
         protected AuthorizationCatalog $catalog,
         protected AuthorizationCache $cache,
@@ -104,6 +107,9 @@ class AssignmentService
         });
     }
 
+    /**
+     * Persist a direct permission effect for the principal and scope.
+     */
     protected function storePermissionEffect(string $table, Model $principal, mixed $permission, AuthorizationScope $scope): void
     {
         $permissionName = $this->catalog->resolvePermission($permission);
@@ -121,6 +127,9 @@ class AssignmentService
         $this->cache->invalidatePrincipal($principal);
     }
 
+    /**
+     * Resolve the persisted identifier for a permission value.
+     */
     protected function permissionId(mixed $permission): int|string|null
     {
         $permissionModel = $this->models->permissionModel();
@@ -133,7 +142,11 @@ class AssignmentService
             : $permissionModel::query()->where('name', $permissionName)->value('id');
     }
 
-    /** @return array<string, int|string|null> */
+    /**
+     * Build the scoped database identity for a principal.
+     *
+     * @return array<string, int|string|null>
+     */
     protected function identity(Model $principal, AuthorizationScope $scope): array
     {
         $principalId = $principal->getKey();
@@ -151,7 +164,11 @@ class AssignmentService
         ];
     }
 
-    /** @return array{created_at: mixed, updated_at: mixed} */
+    /**
+     * Get the timestamps used for assignment writes.
+     *
+     * @return array{created_at: mixed, updated_at: mixed}
+     */
     protected function timestamps(): array
     {
         return ['created_at' => now(), 'updated_at' => now()];

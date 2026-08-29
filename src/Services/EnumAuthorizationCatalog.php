@@ -8,12 +8,18 @@ use Infinity\Dominion\Contracts\RoleValueResolver;
 
 class EnumAuthorizationCatalog implements AuthorizationCatalog
 {
+    /**
+     * Create a new enum-backed authorization catalog instance.
+     */
     public function __construct(
         protected PermissionValueResolver $permissionResolver,
         protected RoleValueResolver $roleResolver,
         protected ModelRegistry $models,
     ) {}
 
+    /**
+     * Resolve a permission model, enum, or scalar to its catalog name.
+     */
     public function resolvePermission(mixed $permission): string
     {
         $permissionModel = $this->models->permissionModel();
@@ -25,6 +31,9 @@ class EnumAuthorizationCatalog implements AuthorizationCatalog
         return $this->permissionResolver->resolve($permission);
     }
 
+    /**
+     * Resolve a role model, enum, or scalar to its catalog name.
+     */
     public function resolveRole(mixed $role): string
     {
         $roleModel = $this->models->roleModel();
@@ -34,11 +43,6 @@ class EnumAuthorizationCatalog implements AuthorizationCatalog
         }
 
         return $this->roleResolver->resolve($role);
-    }
-
-    public function containsPermission(string $permission): bool
-    {
-        return in_array($permission, $this->permissions(), true);
     }
 
     /**
@@ -81,6 +85,8 @@ class EnumAuthorizationCatalog implements AuthorizationCatalog
     }
 
     /**
+     * Extract unique values from the configured enum classes.
+     *
      * @param  array<array-key, mixed>  $enums
      * @param  callable(mixed): string  $resolver
      * @return list<string>

@@ -23,28 +23,13 @@ it('caches authorization results', function (): void {
     $permission = Permission::create(['name' => 'posts.edit']);
     $user->allow($permission);
 
-    // Warm up cache
+    // Warm the decision cache before query logging starts.
     $user->hasPermission('posts.edit');
 
-    // Count queries for second call
     DB::enableQueryLog();
     $user->hasPermission('posts.edit');
     $queries = DB::getQueryLog();
     DB::disableQueryLog();
-
-    // The second call should perform fewer queries than if it wasn't cached.
-    // Actually, it should perform ZERO queries if everything is cached (including permission resolution).
-    // Wait, resolvePermissionId might still perform queries if we pass a string.
-    // If we pass a string, it calls resolvePermissionId which does:
-    // Permission::where('name', $permissionName)->first()?->id;
-    // But AuthorizationCache::get also normalizes permission!
-    // normalizePermission also calls Permission::find or PermissionValueResolver.
-
-    // In my implementation:
-    // normalizePermission for string uses PermissionValueResolver (no query).
-    // so buildKey for string 'posts.edit' doesn't query DB.
-    // AuthorizationCache::get('posts.edit') -> returns true from array cache.
-    // So it should be ZERO queries.
 
     expect($queries)->toBeEmpty();
 });

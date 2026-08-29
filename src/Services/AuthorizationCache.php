@@ -11,14 +11,29 @@ use Infinity\Dominion\Domain\AuthorizationScope;
 
 class AuthorizationCache implements AuthorizationCacheContract
 {
+    /**
+     * The configured cache repository.
+     */
     protected Repository $cache;
 
+    /**
+     * Determine whether decision caching is enabled.
+     */
     protected bool $enabled;
 
+    /**
+     * The decision cache lifetime in seconds.
+     */
     protected int $ttl;
 
+    /**
+     * The prefix applied to Dominion cache keys.
+     */
     protected string $prefix;
 
+    /**
+     * Create a new authorization cache instance.
+     */
     public function __construct()
     {
         $this->enabled = (bool) config('dominion.cache.enabled', true);
@@ -67,6 +82,9 @@ class AuthorizationCache implements AuthorizationCacheContract
         $this->incrementVersion($this->catalogVersionKey());
     }
 
+    /**
+     * Build a versioned cache key for an authorization decision.
+     */
     protected function decisionKey(Model $principal, string $permission, AuthorizationScope $scope): string
     {
         $identity = $principal->getMorphClass().'|'.$principal->getKey();
@@ -77,21 +95,33 @@ class AuthorizationCache implements AuthorizationCacheContract
         return "{$this->prefix}:decision:{$catalogVersion}:{$principalVersion}:{$digest}";
     }
 
+    /**
+     * Build the cache version key for a principal.
+     */
     protected function principalVersionKey(Model $principal): string
     {
         return "{$this->prefix}:principal-version:".hash('sha256', $principal->getMorphClass().'|'.$principal->getKey());
     }
 
+    /**
+     * Get the shared catalog version cache key.
+     */
     protected function catalogVersionKey(): string
     {
         return "{$this->prefix}:catalog-version";
     }
 
+    /**
+     * Get the current integer version for a cache key.
+     */
     protected function version(string $key): int
     {
         return (int) $this->cache->get($key, 1);
     }
 
+    /**
+     * Advance a cache version when caching is enabled.
+     */
     protected function incrementVersion(string $key): void
     {
         if ($this->enabled) {

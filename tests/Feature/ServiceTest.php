@@ -27,13 +27,7 @@ it('binds default services', function (): void {
 it('can override a service via config', function (): void {
     config(['dominion.services.tenant_context' => CustomTenantContext::class]);
 
-    // Re-register or just check if it returns custom instance if we force it?
-    // Since it's a singleton bound in packageRegistered, we might need to swap it in app or re-run registration if possible.
-    // Actually, in tests, usually we can just swap or the config is already set before provider registers if we use RefreshDatabase or similar,
-    // but here we are in a running app.
-
-    // For testing purposes, let's manually bind it to see if it works as intended when config is changed.
-    $this->app->singleton(TenantContext::class, function ($app) {
+    $this->app->singleton(TenantContext::class, function () {
         $class = config('dominion.services.tenant_context');
 
         return new $class;
@@ -66,11 +60,7 @@ it('normalizes role enums', function (): void {
 it('throws exception if service does not implement contract', closure: function (): void {
     config(['dominion.services.tenant_context' => \stdClass::class]);
 
-    // We need to trigger the validation.
-    // Since it happens in packageBooted, and the package is already booted in TestCase,
-    // we might need to call it manually.
-
-    $this->app->singleton(TenantContext::class, function ($app) {
+    $this->app->singleton(TenantContext::class, function () {
         return new \stdClass;
     });
 

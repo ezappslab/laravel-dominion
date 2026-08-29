@@ -7,6 +7,9 @@ use InvalidArgumentException;
 
 final readonly class AuthorizationScope
 {
+    /**
+     * Create a new authorization scope instance.
+     */
     private function __construct(
         public ?string $tenantType,
         public ?string $tenantId,

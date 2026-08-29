@@ -29,6 +29,8 @@ class ModelRegistry
     }
 
     /**
+     * Resolve and validate a configured model class.
+     *
      * @template TModel of object
      *
      * @param  class-string<TModel>  $default

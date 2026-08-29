@@ -15,16 +15,23 @@ interface AuthorizationCatalog
     public function resolveRole(mixed $role): string;
 
     /**
-     * Determine whether a permission belongs to the configured enum catalog.
+     * Get the configured permission names.
+     *
+     * @return list<string>
      */
-    public function containsPermission(string $permission): bool;
-
-    /** @return list<string> */
     public function permissions(): array;
 
-    /** @return list<string> */
+    /**
+     * Get the configured role names.
+     *
+     * @return list<string>
+     */
     public function roles(): array;
 
-    /** @return array<string, list<string>> */
+    /**
+     * Get the configured permission names keyed by role name.
+     *
+     * @return array<string, list<string>>
+     */
     public function rolePermissions(): array;
 }

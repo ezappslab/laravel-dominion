@@ -29,7 +29,11 @@ class Role extends Model
             ->withTimestamps();
     }
 
-    /** @param  iterable<int, int|Permission>  $permissions */
+    /**
+     * Synchronize the permissions assigned to this role.
+     *
+     * @param  iterable<int, int|Permission>  $permissions
+     */
     public function syncPermissions(iterable $permissions): self
     {
         $ids = [];

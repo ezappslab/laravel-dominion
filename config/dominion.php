@@ -78,9 +78,6 @@ return [
     */
 
     'tenancy' => [
-        // Enables tenant-aware authorization scopes and assignments.
-        'enabled' => true,
-
         // The morph type used when a scalar tenant identifier is supplied.
         'tenant_type' => 'tenant',
 

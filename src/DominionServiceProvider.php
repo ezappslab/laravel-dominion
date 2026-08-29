@@ -25,6 +25,9 @@ use Spatie\LaravelPackageTools\PackageServiceProvider;
 
 class DominionServiceProvider extends PackageServiceProvider
 {
+    /**
+     * Configure the package resources and commands.
+     */
     public function configurePackage(Package $package): void
     {
         $package
@@ -155,7 +158,11 @@ class DominionServiceProvider extends PackageServiceProvider
         }
     }
 
-    /** @param  class-string  $contract */
+    /**
+     * Bind a configured service implementation as a singleton.
+     *
+     * @param  class-string  $contract
+     */
     protected function bindConfiguredSingleton(string $contract, string $configKey): void
     {
         $this->app->singleton($contract, function ($app) use ($configKey): object {
@@ -169,7 +176,11 @@ class DominionServiceProvider extends PackageServiceProvider
         });
     }
 
-    /** @return class-string */
+    /**
+     * Get the default implementation for a service configuration key.
+     *
+     * @return class-string
+     */
     protected function defaultService(string $configKey): string
     {
         return match ($configKey) {
