@@ -5,6 +5,7 @@ namespace Infinity\Dominion\Services;
 use Infinity\Dominion\Contracts\AuthorizationCatalog;
 use Infinity\Dominion\Contracts\PermissionValueResolver;
 use Infinity\Dominion\Contracts\RoleValueResolver;
+use Infinity\Dominion\Domain\AuthorizationCatalogSnapshot;
 use Infinity\Dominion\Exceptions\InvalidCatalogConfiguration;
 
 class EnumAuthorizationCatalog implements AuthorizationCatalog
@@ -17,6 +18,21 @@ class EnumAuthorizationCatalog implements AuthorizationCatalog
         protected RoleValueResolver $roleResolver,
         protected ModelRegistry $models,
     ) {}
+
+    /**
+     * Build one validated snapshot of the configured catalog.
+     */
+    public function snapshot(): AuthorizationCatalogSnapshot
+    {
+        $permissions = $this->configuredPermissions();
+        $roles = $this->configuredRoles();
+
+        return new AuthorizationCatalogSnapshot(
+            roles: $roles,
+            permissions: $permissions,
+            rolePermissions: $this->configuredRolePermissions($roles, $permissions),
+        );
+    }
 
     /**
      * Resolve a permission model, enum, or scalar to its catalog name.
@@ -51,6 +67,16 @@ class EnumAuthorizationCatalog implements AuthorizationCatalog
      */
     public function permissions(): array
     {
+        return $this->configuredPermissions();
+    }
+
+    /**
+     * Resolve and validate the configured permission enums.
+     *
+     * @return list<string>
+     */
+    protected function configuredPermissions(): array
+    {
         $enums = config('dominion.catalog.permission_enums', []);
 
         if (! is_array($enums)) {
@@ -64,6 +90,16 @@ class EnumAuthorizationCatalog implements AuthorizationCatalog
      * Return the unique role names declared by the configured enum.
      */
     public function roles(): array
+    {
+        return $this->configuredRoles();
+    }
+
+    /**
+     * Resolve and validate the configured role enum.
+     *
+     * @return list<string>
+     */
+    protected function configuredRoles(): array
     {
         $enum = config('dominion.catalog.role_enum');
 
@@ -83,14 +119,27 @@ class EnumAuthorizationCatalog implements AuthorizationCatalog
      */
     public function rolePermissions(): array
     {
+        return $this->configuredRolePermissions(
+            $this->configuredRoles(),
+            $this->configuredPermissions(),
+        );
+    }
+
+    /**
+     * Resolve and validate role mappings against resolved catalog values.
+     *
+     * @param  list<string>  $allRoles
+     * @param  list<string>  $allPermissions
+     * @return array<string, list<string>>
+     */
+    protected function configuredRolePermissions(array $allRoles, array $allPermissions): array
+    {
         $configuredMap = config('dominion.catalog.role_permissions', []);
 
         if (! is_array($configuredMap)) {
             throw InvalidCatalogConfiguration::for('role_permissions', 'the value must be an array keyed by role name.');
         }
 
-        $allPermissions = $this->permissions();
-        $allRoles = $this->roles();
         $map = [];
 
         foreach ($configuredMap as $role => $permissions) {

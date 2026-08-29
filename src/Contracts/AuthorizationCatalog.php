@@ -2,8 +2,15 @@
 
 namespace Infinity\Dominion\Contracts;
 
+use Infinity\Dominion\Domain\AuthorizationCatalogSnapshot;
+
 interface AuthorizationCatalog
 {
+    /**
+     * Build one validated snapshot of the configured catalog.
+     */
+    public function snapshot(): AuthorizationCatalogSnapshot;
+
     /**
      * Normalize a permission enum, model, or scalar to its catalog name.
      */

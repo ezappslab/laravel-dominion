@@ -32,9 +32,10 @@ class SyncCommand extends Command
         ModelRegistry $models,
         AuthorizationCache $cache,
     ): int {
-        $roles = $catalog->roles();
-        $permissions = $catalog->permissions();
-        $map = $catalog->rolePermissions();
+        $snapshot = $catalog->snapshot();
+        $roles = $snapshot->roles;
+        $permissions = $snapshot->permissions;
+        $map = $snapshot->rolePermissions;
 
         if ($roles === [] && $permissions === []) {
             $this->warn('No Dominion role or permission enums are configured.');

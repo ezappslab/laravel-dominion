@@ -36,6 +36,19 @@ it('synchronizes enum catalogs and role mappings', function (): void {
         ->toBe(['posts.update']);
 });
 
+it('builds a consistent validated catalog snapshot', function (): void {
+    $snapshot = app(AuthorizationCatalog::class)->snapshot();
+
+    expect($snapshot->roles)->toBe(['ADMIN', 'EDITOR'])
+        ->and($snapshot->permissions)->toBe([
+            'posts.create', 'posts.update', 'others.delete', 'others.view',
+        ])
+        ->and($snapshot->rolePermissions)->toBe([
+            'ADMIN' => ['posts.create', 'posts.update', 'others.delete', 'others.view'],
+            'EDITOR' => ['posts.update'],
+        ]);
+});
+
 it('reports a dry run without changing the catalog', function (): void {
     $this->artisan('dominion:sync --dry-run')
         ->assertSuccessful()
