@@ -83,7 +83,7 @@ class AuthorizationCache implements AuthorizationCacheContract
      */
     public function invalidatePrincipal(Model $principal): void
     {
-        $this->rotateVersion($this->principalVersionKey($principal));
+        $this->rotateVersion($this->principalVersionKey($this->principalIdentity($principal)));
     }
 
     /**
@@ -100,7 +100,7 @@ class AuthorizationCache implements AuthorizationCacheContract
     protected function decisionKey(Model $principal, string $permission, AuthorizationScope $scope): string
     {
         $identity = $this->principalIdentity($principal);
-        $principalVersion = $this->version($this->principalVersionKey($principal));
+        $principalVersion = $this->version($this->principalVersionKey($identity));
         $catalogVersion = $this->version($this->catalogVersionKey());
         $digest = hash('sha256', $identity.'|'.$scope->key().'|'.$permission);
 
@@ -108,11 +108,11 @@ class AuthorizationCache implements AuthorizationCacheContract
     }
 
     /**
-     * Build the cache version key for a principal.
+     * Build the cache version key for a principal identity.
      */
-    protected function principalVersionKey(Model $principal): string
+    protected function principalVersionKey(string $identity): string
     {
-        return "{$this->prefix}:principal-version:".hash('sha256', $this->principalIdentity($principal));
+        return "{$this->prefix}:principal-version:".hash('sha256', $identity);
     }
 
     /**
@@ -120,11 +120,13 @@ class AuthorizationCache implements AuthorizationCacheContract
      */
     protected function principalIdentity(Model $principal): string
     {
-        if (! $principal->exists || $principal->getKey() === null) {
+        $key = $principal->getKey();
+
+        if (! $principal->exists || $key === null) {
             throw InvalidPrincipal::notPersisted($principal);
         }
 
-        return $principal->getMorphClass().'|'.$principal->getKey();
+        return $principal->getMorphClass().'|'.$key;
     }
 
     /**

@@ -26,6 +26,36 @@ it('rejects cache access for principals that are not persisted', function (): vo
         ->toThrow(InvalidPrincipal::class, 'must be persisted before authorization can be checked.');
 });
 
+it('calculates the principal identity once per cache key', function (): void {
+    $user = new class extends User
+    {
+        public int $keyReads = 0;
+
+        public int $morphClassReads = 0;
+
+        public function getKey(): mixed
+        {
+            $this->keyReads++;
+
+            return parent::getKey();
+        }
+
+        public function getMorphClass(): string
+        {
+            $this->morphClassReads++;
+
+            return parent::getMorphClass();
+        }
+    };
+    $user->setRawAttributes(['id' => 1]);
+    $user->exists = true;
+
+    app(AuthorizationCache::class)->get($user, 'posts.edit', AuthorizationScope::global());
+
+    expect($user->keyReads)->toBe(1)
+        ->and($user->morphClassReads)->toBe(1);
+});
+
 it('caches authorization results', function (): void {
     $user = User::create([
         'name' => 'John Doe',
