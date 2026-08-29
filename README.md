@@ -15,18 +15,19 @@ php artisan dominion:install
 php artisan migrate
 ```
 
-Add the combined trait to any Eloquent principal:
+Implement the marker contract and add the combined trait to any Eloquent principal:
 
 ```php
+use Infinity\Dominion\Contracts\DominionPrincipal;
 use Infinity\Dominion\Traits\HasDominionAuthorization;
 
-class User extends Authenticatable
+class User extends Authenticatable implements DominionPrincipal
 {
     use HasDominionAuthorization;
 }
 ```
 
-The separate `HasRoles` and `HasPermissions` traits remain available when preferred.
+The `DominionPrincipal` contract opts the model into Dominion's global Gate callback. The separate `HasRoles` and `HasPermissions` traits remain available when preferred, but their model must also implement this contract for Gate integration.
 
 ## Define the catalog
 

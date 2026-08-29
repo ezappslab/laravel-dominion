@@ -8,6 +8,7 @@ use Infinity\Dominion\Commands\SyncCommand;
 use Infinity\Dominion\Contracts\AuthorizationCache as AuthorizationCacheContract;
 use Infinity\Dominion\Contracts\AuthorizationCatalog;
 use Infinity\Dominion\Contracts\AuthorizationResolver;
+use Infinity\Dominion\Contracts\DominionPrincipal;
 use Infinity\Dominion\Contracts\PermissionValueResolver;
 use Infinity\Dominion\Contracts\RoleValueResolver;
 use Infinity\Dominion\Contracts\TenantContext;
@@ -93,7 +94,7 @@ class DominionServiceProvider extends PackageServiceProvider
     protected function registerGateBefore(): void
     {
         Gate::before(function (mixed $user, string $ability): ?bool {
-            if (! $user instanceof Model) {
+            if (! $user instanceof Model || ! $user instanceof DominionPrincipal) {
                 return null;
             }
 

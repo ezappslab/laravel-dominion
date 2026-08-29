@@ -2,12 +2,22 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 use Infinity\Dominion\Contracts\TenantContext;
 use Infinity\Dominion\Domain\AuthorizationScope;
 use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
 use Workbench\App\Models\User;
+
+it('abstains for principals that are not enabled for Dominion', function (): void {
+    $user = new class extends Authenticatable {};
+    Permission::create(['name' => 'posts.update']);
+    Gate::define('posts.update', fn (): bool => true);
+
+    expect(Gate::forUser($user)->allows('posts.update'))->toBeTrue();
+});
 
 it('resolves permission via Gate::before', function (): void {
     $user = User::create([
