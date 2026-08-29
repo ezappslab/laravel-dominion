@@ -46,7 +46,7 @@ class SyncCommand extends Command
             return self::SUCCESS;
         }
 
-        DB::transaction(function () use ($roles, $permissions, $map, $models): void {
+        DB::transaction(function () use ($roles, $permissions, $map, $models, $cache): void {
             $roleModel = $models->roleModel();
             $permissionModel = $models->permissionModel();
 
@@ -73,9 +73,10 @@ class SyncCommand extends Command
                 $roleModel::query()->whereNotIn('name', $roles)->delete();
                 $permissionModel::query()->whereNotIn('name', $permissions)->delete();
             }
+
+            DB::afterCommit(fn () => $cache->invalidateCatalog());
         });
 
-        $cache->invalidateCatalog();
         $this->info('Dominion catalog synchronized.');
 
         return self::SUCCESS;

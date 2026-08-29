@@ -71,7 +71,7 @@ class AuthorizationCache implements AuthorizationCacheContract
      */
     public function invalidatePrincipal(Model $principal): void
     {
-        $this->incrementVersion($this->principalVersionKey($principal));
+        $this->rotateVersion($this->principalVersionKey($principal));
     }
 
     /**
@@ -79,7 +79,7 @@ class AuthorizationCache implements AuthorizationCacheContract
      */
     public function invalidateCatalog(): void
     {
-        $this->incrementVersion($this->catalogVersionKey());
+        $this->rotateVersion($this->catalogVersionKey());
     }
 
     /**
@@ -114,18 +114,20 @@ class AuthorizationCache implements AuthorizationCacheContract
     /**
      * Get the current integer version for a cache key.
      */
-    protected function version(string $key): int
+    protected function version(string $key): string
     {
-        return (int) $this->cache->get($key, 1);
+        $version = $this->cache->get($key);
+
+        return is_string($version) ? $version : 'initial';
     }
 
     /**
-     * Advance a cache version when caching is enabled.
+     * Atomically replace a cache version when caching is enabled.
      */
-    protected function incrementVersion(string $key): void
+    protected function rotateVersion(string $key): void
     {
         if ($this->enabled) {
-            $this->cache->forever($key, $this->version($key) + 1);
+            $this->cache->forever($key, bin2hex(random_bytes(16)));
         }
     }
 }

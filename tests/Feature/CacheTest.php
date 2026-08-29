@@ -2,10 +2,13 @@
 
 namespace Infinity\Dominion\Tests\Feature;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Infinity\Dominion\Contracts\AuthorizationCache;
 use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
+use RuntimeException;
 use Workbench\App\Models\User;
 
 beforeEach(function (): void {
@@ -139,4 +142,53 @@ it('separates cache by tenant', function (): void {
 
     // Global check (should still be false from cache)
     expect($user->hasPermission('posts.edit'))->toBeFalse();
+});
+
+it('does not invalidate cached decisions when an assignment transaction rolls back', function (): void {
+    $user = User::create([
+        'name' => 'John Doe',
+        'email' => 'john@example.com',
+        'password' => Hash::make('password'),
+    ]);
+    $permission = Permission::create(['name' => 'posts.edit']);
+
+    expect($user->hasPermission('posts.edit'))->toBeFalse();
+
+    try {
+        DB::transaction(function () use ($user, $permission): void {
+            $user->allow($permission);
+
+            throw new RuntimeException('Rollback assignment.');
+        });
+    } catch (RuntimeException) {
+        // The rollback is expected by this regression test.
+    }
+
+    DB::enableQueryLog();
+    $decision = $user->hasPermission('posts.edit');
+    $queries = DB::getQueryLog();
+    DB::disableQueryLog();
+
+    expect($decision)->toBeFalse()
+        ->and($queries)->toBeEmpty()
+        ->and(DB::table('permission_grants')->count())->toBe(0);
+});
+
+it('rotates cache versions with a single atomic write', function (): void {
+    $user = User::create([
+        'name' => 'John Doe',
+        'email' => 'john@example.com',
+        'password' => Hash::make('password'),
+    ]);
+    $cache = app(AuthorizationCache::class);
+    $repository = Cache::store('array');
+    $key = 'dominion:principal-version:'.hash('sha256', $user->getMorphClass().'|'.$user->getKey());
+
+    $cache->invalidatePrincipal($user);
+    $first = $repository->get($key);
+    $cache->invalidatePrincipal($user);
+    $second = $repository->get($key);
+
+    expect($first)->toBeString()->not->toBe('initial')
+        ->and($second)->toBeString()->not->toBe($first);
 });

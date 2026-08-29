@@ -4,6 +4,7 @@ namespace Infinity\Dominion\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Facades\DB;
 use Infinity\Dominion\Contracts\AuthorizationCache;
 use Infinity\Dominion\Services\ModelRegistry;
 
@@ -41,8 +42,10 @@ class Role extends Model
             $ids[] = $permission instanceof Permission ? $permission->getKey() : $permission;
         }
 
-        $this->permissions()->sync($ids);
-        app(AuthorizationCache::class)->invalidateCatalog();
+        DB::transaction(function () use ($ids): void {
+            $this->permissions()->sync($ids);
+            DB::afterCommit(fn () => app(AuthorizationCache::class)->invalidateCatalog());
+        });
 
         return $this;
     }

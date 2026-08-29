@@ -33,12 +33,14 @@ class AssignmentService
             throw new InvalidArgumentException("Role [{$roleName}] is not present in the Dominion catalog. Run dominion:sync first.");
         }
 
-        DB::table('role_assignments')->upsert(
-            [$this->identity($principal, $scope) + ['role_id' => $roleId] + $this->timestamps()],
-            ['role_id', 'principal_type', 'principal_id', 'scope_key'],
-            ['updated_at'],
-        );
-        $this->cache->invalidatePrincipal($principal);
+        DB::transaction(function () use ($principal, $scope, $roleId): void {
+            DB::table('role_assignments')->upsert(
+                [$this->identity($principal, $scope) + ['role_id' => $roleId] + $this->timestamps()],
+                ['role_id', 'principal_type', 'principal_id', 'scope_key'],
+                ['updated_at'],
+            );
+            $this->invalidatePrincipalAfterCommit($principal);
+        });
     }
 
     /**
@@ -51,8 +53,15 @@ class AssignmentService
         $roleId = $role instanceof $roleModel ? $role->getKey() : $roleModel::query()->where('name', $roleName)->value('id');
 
         if ($roleId !== null) {
-            DB::table('role_assignments')->where($this->identity($principal, $scope) + ['role_id' => $roleId])->delete();
-            $this->cache->invalidatePrincipal($principal);
+            DB::transaction(function () use ($principal, $scope, $roleId): void {
+                $deleted = DB::table('role_assignments')
+                    ->where($this->identity($principal, $scope) + ['role_id' => $roleId])
+                    ->delete();
+
+                if ($deleted > 0) {
+                    $this->invalidatePrincipalAfterCommit($principal);
+                }
+            });
         }
     }
 
@@ -93,9 +102,15 @@ class AssignmentService
 
         if ($permissionId !== null) {
             $identity = $this->identity($principal, $scope) + ['permission_id' => $permissionId];
-            DB::table('permission_grants')->where($identity)->delete();
-            DB::table('permission_denials')->where($identity)->delete();
-            $this->cache->invalidatePrincipal($principal);
+
+            DB::transaction(function () use ($principal, $identity): void {
+                $deleted = DB::table('permission_grants')->where($identity)->delete();
+                $deleted += DB::table('permission_denials')->where($identity)->delete();
+
+                if ($deleted > 0) {
+                    $this->invalidatePrincipalAfterCommit($principal);
+                }
+            });
         }
     }
 
@@ -138,16 +153,23 @@ class AssignmentService
 
         $identity = $this->identity($principal, $scope) + ['permission_id' => $permissionId];
 
-        DB::transaction(function () use ($table, $oppositeTable, $identity): void {
+        DB::transaction(function () use ($table, $oppositeTable, $identity, $principal): void {
             DB::table($oppositeTable)->where($identity)->delete();
             DB::table($table)->upsert(
                 [$identity + $this->timestamps()],
                 ['permission_id', 'principal_type', 'principal_id', 'scope_key'],
                 ['updated_at'],
             );
+            $this->invalidatePrincipalAfterCommit($principal);
         });
+    }
 
-        $this->cache->invalidatePrincipal($principal);
+    /**
+     * Invalidate principal decisions after the surrounding transaction commits.
+     */
+    protected function invalidatePrincipalAfterCommit(Model $principal): void
+    {
+        DB::afterCommit(fn () => $this->cache->invalidatePrincipal($principal));
     }
 
     /**
