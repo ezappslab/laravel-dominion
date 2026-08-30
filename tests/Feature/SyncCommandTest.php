@@ -50,6 +50,15 @@ it('builds a consistent validated catalog snapshot', function (): void {
         ]);
 });
 
+it('resolves persisted catalog models by name', function (): void {
+    $role = Role::create(['name' => 'OWNER']);
+    $permission = Permission::create(['name' => 'posts.publish']);
+    $catalog = app(AuthorizationCatalog::class);
+
+    expect($catalog->resolveRole($role))->toBe('OWNER')
+        ->and($catalog->resolvePermission($permission))->toBe('posts.publish');
+});
+
 it('reports a dry run without changing the catalog', function (): void {
     $this->artisan('dominion:sync --dry-run')
         ->assertSuccessful()
@@ -148,6 +157,24 @@ it('rejects invalid permission enum classes', function (): void {
         ->toThrow(InvalidCatalogConfiguration::class, '[App\\Enums\\MissingPermission] is not an enum class.');
 });
 
+it('rejects malformed catalog configuration', function (string $key, mixed $value, string $message): void {
+    config(["dominion.catalog.{$key}" => $value]);
+
+    $catalog = app(AuthorizationCatalog::class);
+    $operation = match ($key) {
+        'permission_enums' => fn () => $catalog->permissions(),
+        'role_enum' => fn () => $catalog->roles(),
+        default => fn () => $catalog->rolePermissions(),
+    };
+
+    expect($operation)->toThrow(InvalidCatalogConfiguration::class, $message);
+})->with([
+    'permission enums must be an array' => ['permission_enums', TestPermission::class, 'value must be an array'],
+    'role enum must be a class name' => ['role_enum', 42, 'value must be an enum class name or null'],
+    'role map must be an array' => ['role_permissions', 'ADMIN', 'value must be an array keyed by role name'],
+    'role permissions must be an array' => ['role_permissions', ['ADMIN' => 'posts.create'], 'permissions for role [ADMIN] must be an array'],
+]);
+
 it('rejects duplicate permission values across enums', function (): void {
     config(['dominion.catalog.permission_enums' => [TestPermission::class, TestDuplicatePermission::class]]);
 
@@ -174,4 +201,13 @@ it('rejects wildcard mappings combined with explicit permissions', function (): 
 
     expect(fn () => app(AuthorizationCatalog::class)->rolePermissions())
         ->toThrow(InvalidCatalogConfiguration::class, 'wildcard for role [ADMIN] must be the only permission value.');
+});
+
+it('rejects duplicate permissions within a role mapping', function (): void {
+    config(['dominion.catalog.role_permissions' => [
+        TestRole::EDITOR->name => [TestPermission::CREATE, TestPermission::CREATE],
+    ]]);
+
+    expect(fn () => app(AuthorizationCatalog::class)->rolePermissions())
+        ->toThrow(InvalidCatalogConfiguration::class, 'role [EDITOR] contains duplicate permissions.');
 });

@@ -22,8 +22,6 @@ it('abstains for principals that are not enabled for Dominion', function (): voi
 it('authorizes via policy correctly', function (): void {
     config(['dominion.policy.models' => [Post::class]]);
 
-    Gate::policy(Post::class, config('dominion.policy.class'));
-
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -57,6 +55,37 @@ it('maps standard policy abilities to table permissions', function (): void {
     $user->allow('posts.update');
 
     expect($user->can('update', $post))->toBeTrue();
+});
+
+it('maps class-based policy abilities to table permissions', function (): void {
+    config(['dominion.policy.models' => [Post::class]]);
+    Gate::policy(Post::class, config('dominion.policy.class'));
+
+    $user = User::create([
+        'name' => 'John Doe',
+        'email' => 'class-policy@example.com',
+        'password' => Hash::make('password'),
+    ]);
+    Permission::create(['name' => 'posts.create']);
+    $user->allow('posts.create');
+
+    $policy = app(config('dominion.policy.class'));
+
+    expect($policy->create($user, Post::class))->toBeTrue();
+});
+
+it('uses an unqualified ability when no resource model is provided', function (): void {
+    $user = User::create([
+        'name' => 'John Doe',
+        'email' => 'unqualified-policy@example.com',
+        'password' => Hash::make('password'),
+    ]);
+    Permission::create(['name' => 'publish']);
+    $user->allow('publish');
+
+    $policy = app(config('dominion.policy.class'));
+
+    expect($policy->publish($user))->toBeTrue();
 });
 
 it('authorizes via policy with roles', function (): void {

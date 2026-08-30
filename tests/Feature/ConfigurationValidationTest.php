@@ -30,7 +30,7 @@ it('validates and resolves assignment profiles', function (): void {
         ]);
 });
 
-it('rejects malformed and unknown profile values', function (array $profile, string $message): void {
+it('rejects malformed and unknown profile values', function (mixed $profile, string $message): void {
     config(['dominion.profiles.member' => $profile]);
 
     expect(fn () => app(ConfigurationValidator::class)->profile('member'))
@@ -38,6 +38,8 @@ it('rejects malformed and unknown profile values', function (array $profile, str
 })->with([
     'unsupported key' => [['role' => [TestRole::EDITOR]], 'unsupported keys: role'],
     'non-list roles' => [['roles' => ['editor' => TestRole::EDITOR]], '[roles] must be a list'],
+    'non-array definition' => ['member', 'definition must be an array'],
+    'unsupported value' => [['roles' => [true]], '[roles] contains an unsupported value of type bool'],
     'unknown role' => [['roles' => ['OWNER']], '[roles] value [OWNER] is not declared'],
     'unknown permission' => [['permissions' => ['posts.delete']], '[permissions] value [posts.delete] is not declared'],
     'duplicate permission' => [['permissions' => [TestPermission::CREATE, TestPermission::CREATE]], '[permissions] contains duplicate values'],
@@ -52,6 +54,28 @@ it('rejects a missing assignment profile', function (): void {
         ->toThrow(InvalidProfileConfiguration::class, 'the profile is not configured.');
 });
 
+it('validates every configured assignment profile', function (): void {
+    config(['dominion.profiles' => [
+        'member' => ['roles' => [TestRole::EDITOR]],
+        'publisher' => ['permissions' => [TestPermission::CREATE]],
+    ]]);
+
+    app(ConfigurationValidator::class)->validateProfiles();
+
+    expect(true)->toBeTrue();
+});
+
+it('rejects an invalid profiles collection', function (mixed $profiles, string $message): void {
+    config(['dominion.profiles' => $profiles]);
+
+    expect(fn () => app(ConfigurationValidator::class)->validateProfiles())
+        ->toThrow(InvalidProfileConfiguration::class, $message);
+})->with([
+    'non-array collection' => ['member', 'configuration value must be an array'],
+    'empty profile name' => [['' => []], 'profile names must be non-empty strings'],
+    'numeric profile name' => [[[]], 'profile names must be non-empty strings'],
+]);
+
 it('validates policy model mappings', function (): void {
     config([
         'dominion.policy.class' => DefaultPolicy::class,
@@ -59,6 +83,17 @@ it('validates policy model mappings', function (): void {
             Post::class,
             Post::class => DefaultPolicy::class,
         ],
+    ]);
+
+    app(ConfigurationValidator::class)->validatePolicy();
+
+    expect(true)->toBeTrue();
+});
+
+it('uses the default policy for a model mapping without an override', function (): void {
+    config([
+        'dominion.policy.class' => DefaultPolicy::class,
+        'dominion.policy.models' => [Post::class => []],
     ]);
 
     app(ConfigurationValidator::class)->validatePolicy();

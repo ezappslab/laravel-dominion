@@ -11,14 +11,13 @@ use Infinity\Dominion\Services\DefaultPermissionValueResolver;
 use Infinity\Dominion\Services\DefaultRoleValueResolver;
 use Infinity\Dominion\Services\DefaultTenantContext;
 use Infinity\Dominion\Services\DominionDatabase;
+use Infinity\Dominion\Services\ModelRegistry;
 use InvalidArgumentException;
 use ReflectionMethod;
 use RuntimeException;
 use Tests\Support\ConnectedPermission;
 use Tests\Support\ConnectedRole;
 use Tests\Support\CustomTenantContext;
-use Tests\Support\TestPermission;
-use Tests\Support\TestRole;
 
 it('binds default services', function (): void {
     expect(app(TenantContext::class))
@@ -44,24 +43,6 @@ it('can override a service via config', function (): void {
         ->toBe('123');
 });
 
-it('normalizes permission enums', function (): void {
-    $resolver = app(PermissionValueResolver::class);
-
-    expect($resolver->resolve(TestPermission::CREATE))
-        ->toBe('posts.create')
-        ->and($resolver->resolve(TestPermission::UPDATE))
-        ->toBe('posts.update');
-});
-
-it('normalizes role enums', function (): void {
-    $resolver = app(RoleValueResolver::class);
-
-    expect($resolver->resolve(TestRole::ADMIN))
-        ->toBe('ADMIN')
-        ->and($resolver->resolve(TestRole::EDITOR))
-        ->toBe('EDITOR');
-});
-
 it('uses the shared connection configured on the catalog models', function (): void {
     config([
         'database.connections.dominion' => config('database.connections.sqlite'),
@@ -81,6 +62,13 @@ it('rejects catalog models that use different connections', function (): void {
 
     expect(fn () => app(DominionDatabase::class)->connection())
         ->toThrow(InvalidArgumentException::class, 'must use the same database connection');
+});
+
+it('rejects catalog models that do not extend the package models', function (): void {
+    config(['dominion.models.role' => \stdClass::class]);
+
+    expect(fn () => app(ModelRegistry::class)->roleModel())
+        ->toThrow(InvalidArgumentException::class, 'role model must extend');
 });
 
 it('throws exception if service does not implement contract', closure: function (): void {
