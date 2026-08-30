@@ -23,6 +23,22 @@ it('purges every authorization assignment when a principal is deleted', function
     expectPrincipalAssignmentsToExist(false);
 });
 
+it('preserves assignments when principal deletion is cancelled', function (): void {
+    $user = User::create([
+        'name' => 'Retained User',
+        'email' => 'retained@example.com',
+        'password' => Hash::make('password'),
+    ]);
+    assignAuthorizationData($user);
+
+    User::deleting(fn (User $deletingUser): bool => ! $deletingUser->is($user));
+
+    expect($user->delete())->toBeFalse()
+        ->and(User::query()->find($user->getKey()))->not->toBeNull();
+
+    expectPrincipalAssignmentsToExist();
+});
+
 it('invalidates cached decisions before a principal identifier is reused', function (): void {
     $user = User::create([
         'name' => 'Original User',

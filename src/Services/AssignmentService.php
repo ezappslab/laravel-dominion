@@ -141,8 +141,8 @@ class AssignmentService
     {
         $principalId = $principal->getKey();
 
-        if (! $principal->exists || $principalId === null) {
-            throw InvalidPrincipal::notPersisted($principal);
+        if ($principalId === null) {
+            throw InvalidPrincipal::missingKey($principal);
         }
 
         $identity = [

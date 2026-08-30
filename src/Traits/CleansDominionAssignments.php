@@ -16,11 +16,11 @@ trait CleansDominionAssignments
         $purge = fn (Model $principal) => app(AssignmentService::class)->purgePrincipal($principal);
 
         if (in_array(SoftDeletes::class, class_uses_recursive(static::class), true)) {
-            static::registerModelEvent('forceDeleting', $purge);
+            static::registerModelEvent('forceDeleted', $purge);
 
             return;
         }
 
-        static::deleting($purge);
+        static::deleted($purge);
     }
 }

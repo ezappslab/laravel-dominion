@@ -123,7 +123,7 @@ class AuthorizationCache implements AuthorizationCacheContract
             return;
         }
 
-        $this->rotateVersion($this->principalVersionKey($this->principalIdentity($principal)));
+        $this->rotateVersion($this->principalVersionKey($this->principalIdentity($principal, requirePersisted: false)));
     }
 
     /**
@@ -162,11 +162,11 @@ class AuthorizationCache implements AuthorizationCacheContract
     /**
      * Get a stable identity for a persisted principal.
      */
-    protected function principalIdentity(Model $principal): string
+    protected function principalIdentity(Model $principal, bool $requirePersisted = true): string
     {
         $key = $principal->getKey();
 
-        if (! $principal->exists || $key === null) {
+        if ($key === null || ($requirePersisted && ! $principal->exists)) {
             throw InvalidPrincipal::notPersisted($principal);
         }
 
