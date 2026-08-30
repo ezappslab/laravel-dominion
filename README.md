@@ -2,6 +2,16 @@
 
 Laravel Dominion provides enum-driven, tenant-aware roles and permissions for Laravel applications. Application enums define the authorization catalog, the database stores assignments, and an optional versioned cache accelerates decisions.
 
+Dominion provides:
+
+- Backed-enum role and permission catalogs
+- Global and tenant-scoped assignments
+- Direct grants and explicit denials
+- Role-to-permission synchronization
+- Laravel Gate and policy integration
+- Versioned authorization caching
+- Automatic assignment cleanup when principals are permanently deleted
+
 ## Requirements
 
 - PHP 8.4+
@@ -14,6 +24,8 @@ composer require ezappslab/laravel-dominion
 php artisan dominion:install
 php artisan migrate
 ```
+
+`dominion:install` publishes `config/dominion.php` and the package migration. Review both files before migrating, especially when using custom table names or UUID/ULID principal keys.
 
 Implement the marker contract and add the combined trait to any Eloquent principal:
 
@@ -29,11 +41,27 @@ class User extends Authenticatable implements DominionPrincipal
 
 The `DominionPrincipal` contract opts the model into Dominion's global Gate callback. The separate `HasRoles` and `HasPermissions` traits remain available when preferred, but their model must also implement this contract for Gate integration.
 
+### Principal key types
+
+The published migration uses Laravel's `$table->morphs('principal')`, which creates numeric principal IDs. If every principal uses UUIDs or ULIDs, update all three assignment tables in the published migration before running it:
+
+```php
+// UUID principals
+$table->uuidMorphs('principal');
+
+// ULID principals
+$table->ulidMorphs('principal');
+```
+
+Use one principal key type consistently across the assignment schema. Mixed numeric, UUID, and ULID principal keys are not supported by a single published schema.
+
 ## Define the catalog
 
 Create application-level enums:
 
 ```php
+namespace App\Enums;
+
 enum Role: string
 {
     case Admin = 'admin';
@@ -77,6 +105,39 @@ php artisan dominion:sync --prune
 
 `'*'` expands to every configured permission during synchronization.
 
+Run `dominion:sync` after deploying catalog changes and before assigning a newly introduced role or permission. Use `--dry-run` to inspect the synchronization plan. Use `--prune` only when removed enum values should also be deleted from the database.
+
+## Quick start example
+
+After synchronizing the catalog, assign a tenant role and check its permissions:
+
+```php
+use App\Enums\Permission;
+use App\Enums\Role;
+
+$user->assignRole(Role::Manager, tenant: $team);
+
+$user->hasRole(Role::Manager, tenant: $team);                  // true
+$user->hasPermission(Permission::UsersView, tenant: $team);   // true
+$user->hasPermission(Permission::UsersCreate, tenant: $team); // false
+```
+
+Add a direct grant or an explicit denial when a principal needs an exception to its role:
+
+```php
+$user->grantPermission(Permission::UsersCreate, tenant: $team);
+$user->denyPermission(Permission::UsersUpdate, tenant: $team);
+
+$user->hasPermission(Permission::UsersCreate, tenant: $team); // true
+$user->hasPermission(Permission::UsersUpdate, tenant: $team); // false
+```
+
+An explicit denial wins over direct grants and role-derived permissions. Calling `revokePermission` removes both the direct grant and direct denial for that permission in the selected scope:
+
+```php
+$user->revokePermission(Permission::UsersUpdate, tenant: $team);
+```
+
 ## Assign authorization
 
 ```php
@@ -115,6 +176,15 @@ $user->assignAuthorizationProfile('member', tenant: $tenant);
 The `roles()`, `permissions()`, and `deniedPermissions()` relationships are available for querying authorization data. Do not call relationship mutation methods such as `attach`, `detach`, `sync`, `updateExistingPivot`, or write directly to Dominion tables. Those writes bypass Dominion's transactions, grant/denial conflict handling, domain events, and cache invalidation, which can leave authorization decisions stale or inconsistent.
 
 Passing `null` resolves the configured current tenant. Use `AuthorizationScope::global()` to request global scope explicitly. Global grants and roles inherit into tenant scopes by default.
+
+The tenant argument may be an Eloquent model, scalar identifier, or explicit scope:
+
+```php
+$user->assignRole(Role::Manager, tenant: $team);
+$user->assignRole(Role::Member, tenant: 'team-01');
+$user->assignRole(Role::Admin, tenant: AuthorizationScope::global());
+$user->assignRole(Role::Member, tenant: AuthorizationScope::tenant('workspace', 'acme'));
+```
 
 ## Assignment profiles
 
@@ -160,6 +230,25 @@ The Gate integration is enabled by default:
 $user->can(Permission::UsersUpdate->value);
 ```
 
+Use Laravel's normal authorization helpers in application code:
+
+```php
+// Controller or service
+Gate::authorize(Permission::UsersUpdate->value);
+
+// Route middleware
+Route::put('/users/{user}', UpdateUserController::class)
+    ->middleware('can:users.update');
+```
+
+```blade
+@can('users.update')
+    <a href="{{ route('users.edit', $user) }}">Edit user</a>
+@endcan
+```
+
+Gate checks use the scope returned by the configured `TenantContext`. For an explicit scope that differs from the current context, call `hasPermission($permission, tenant: $scope)` directly.
+
 Dominion is authoritative only for models implementing `DominionPrincipal`. For those models, every ability that does not resolve to an explicit allow is denied. Other authenticated model types bypass Dominion and continue through Laravel's gates and policies.
 
 Register the default resource policy:
@@ -197,6 +286,8 @@ class CurrentTenantContext implements TenantContext
 
 Configure it under `services.tenant_context`. Tenant models, integer keys, string keys, UUIDs, and ULIDs are supported.
 
+If no custom context is configured, `DefaultTenantContext` resolves the global scope. Applications that use tenant assignments should bind their current tenant through a custom implementation.
+
 ## Cache behavior
 
 The database is always the assignment source of truth. Cache stores computed decisions only. Principal and catalog version numbers are embedded in cache keys, so invalidation works across taggable and non-taggable Laravel stores without flushing unrelated application cache entries.
@@ -224,18 +315,29 @@ Dominion keeps application boot validation lightweight. Configured service class
 
 ## Development
 
-Run the behavioral test suite:
+Install development dependencies and run the behavioral test suite:
 
 ```bash
+composer install
 composer test
 ```
 
-Run formatting, static analysis, and Rector's dry run:
+Run the complete quality workflow:
 
 ```bash
 composer lint
 ```
 
-The suite exercises enum synchronization, scope precedence, profiles, caching, Gate fall-through, policies, migrations, and compatibility aliases.
+`composer lint` runs Pint in fixing mode, followed by PHPStan and a Rector dry run. Pint may modify tracked PHP files. To inspect all quality results without changing tracked files, run:
+
+```bash
+vendor/bin/pint --test --ansi
+vendor/bin/phpstan analyse --verbose --ansi
+vendor/bin/rector process --dry-run --ansi
+```
+
+See [the contributor guide](docs/tooling.md) for test organization, development conventions, and the release checklist.
+
+The test suite exercises enum synchronization, scope precedence, profiles, caching, Gate fall-through, policies, migrations, and compatibility aliases.
 
 Release CI should exercise every supported PHP and Laravel combination and run SQLite, MySQL, and PostgreSQL integration jobs because assignment indexes and foreign keys are database-sensitive.
