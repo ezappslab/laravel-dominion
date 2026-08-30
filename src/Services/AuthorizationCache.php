@@ -43,20 +43,52 @@ class AuthorizationCache implements AuthorizationCacheContract
      */
     public function __construct()
     {
-        $this->enabled = (bool) config('dominion.cache.enabled', true);
+        $enabled = config('dominion.cache.enabled', true);
+
+        if (! is_bool($enabled)) {
+            throw InvalidCacheConfiguration::for('enabled', 'the value must be a boolean.');
+        }
+
+        $this->enabled = $enabled;
 
         if (! $this->enabled) {
             return;
         }
 
-        $this->ttl = (int) config('dominion.cache.ttl', 300);
-        $this->versionTtl = (int) config('dominion.cache.version_ttl', 3600);
-        $this->prefix = (string) config('dominion.cache.prefix', 'dominion');
-        $this->cache = Cache::store(config('dominion.cache.store'));
+        $ttl = config('dominion.cache.ttl', 300);
+        $versionTtl = config('dominion.cache.version_ttl', 3600);
+        $prefix = config('dominion.cache.prefix', 'dominion');
+        $store = config('dominion.cache.store');
+
+        if (! is_int($ttl) || $ttl <= 0) {
+            throw InvalidCacheConfiguration::for('ttl', 'the value must be a positive integer.');
+        }
+
+        if (! is_int($versionTtl) || $versionTtl <= 0) {
+            throw InvalidCacheConfiguration::for('version_ttl', 'the value must be a positive integer.');
+        }
+
+        if (! is_string($prefix) || trim($prefix) === '') {
+            throw InvalidCacheConfiguration::for('prefix', 'the value must be a non-empty string.');
+        }
+
+        if ($store !== null && (! is_string($store) || trim($store) === '')) {
+            throw InvalidCacheConfiguration::for('store', 'the value must be null or a non-empty string.');
+        }
+
+        if (is_string($store) && ! is_array(config("cache.stores.{$store}"))) {
+            throw InvalidCacheConfiguration::for('store', "cache store [{$store}] is not configured.");
+        }
+
+        $this->ttl = $ttl;
+        $this->versionTtl = $versionTtl;
+        $this->prefix = $prefix;
 
         if ($this->versionTtl <= $this->ttl) {
             throw InvalidCacheConfiguration::unsafeVersionTtl($this->ttl, $this->versionTtl);
         }
+
+        $this->cache = Cache::store($store);
     }
 
     /**

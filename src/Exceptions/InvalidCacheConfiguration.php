@@ -6,6 +6,11 @@ use InvalidArgumentException;
 
 class InvalidCacheConfiguration extends InvalidArgumentException
 {
+    public static function for(string $key, string $reason): self
+    {
+        return new self("Invalid Dominion cache configuration [{$key}]: {$reason}");
+    }
+
     /**
      * Create an exception for an unsafe cache lifetime configuration.
      */

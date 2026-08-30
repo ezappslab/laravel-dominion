@@ -5,10 +5,10 @@ namespace Tests\Feature;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
+use Infinity\Dominion\Exceptions\InvalidTableConfiguration;
 use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
 use Infinity\Dominion\Services\TableRegistry;
-use InvalidArgumentException;
 use Workbench\App\Models\User;
 
 it('uses configured table names throughout the authorization lifecycle', function (): void {
@@ -56,9 +56,39 @@ it('uses configured table names throughout the authorization lifecycle', functio
         ->and(DB::table($configured['permission_denials'])->count())->toBe(0);
 });
 
-it('rejects an invalid configured table name', function (): void {
-    config(['dominion.tables.roles' => '']);
+it('rejects invalid table configuration', function (mixed $tables, string $message): void {
+    config(['dominion.tables' => $tables]);
 
     expect(fn () => app(TableRegistry::class)->roles())
-        ->toThrow(InvalidArgumentException::class, 'must be a non-empty string');
-});
+        ->toThrow(InvalidTableConfiguration::class, $message);
+})->with([
+    'non-array map' => ['roles', 'value must be an array'],
+    'missing key' => [[
+        'roles' => 'roles',
+    ], 'missing required keys'],
+    'unsupported key' => [[
+        'roles' => 'roles',
+        'permissions' => 'permissions',
+        'role_permissions' => 'permission_role',
+        'role_assignments' => 'role_assignments',
+        'permission_grants' => 'permission_grants',
+        'permission_denials' => 'permission_denials',
+        'unexpected' => 'unexpected',
+    ], 'unsupported keys: unexpected'],
+    'empty name' => [[
+        'roles' => '',
+        'permissions' => 'permissions',
+        'role_permissions' => 'permission_role',
+        'role_assignments' => 'role_assignments',
+        'permission_grants' => 'permission_grants',
+        'permission_denials' => 'permission_denials',
+    ], '[roles] must be a non-empty string'],
+    'duplicate name' => [[
+        'roles' => 'catalog',
+        'permissions' => 'catalog',
+        'role_permissions' => 'permission_role',
+        'role_assignments' => 'role_assignments',
+        'permission_grants' => 'permission_grants',
+        'permission_denials' => 'permission_denials',
+    ], 'every table name must be unique'],
+]);

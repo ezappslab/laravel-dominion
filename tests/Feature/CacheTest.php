@@ -286,6 +286,23 @@ it('rejects version lifetimes that cannot safely outlive decisions', function ()
         ->toThrow(InvalidCacheConfiguration::class, 'must be greater than the decision TTL');
 });
 
+it('rejects invalid enabled cache configuration', function (string $key, mixed $value, string $message): void {
+    config(["dominion.cache.{$key}" => $value]);
+    $this->app->forgetInstance(AuthorizationCache::class);
+
+    expect(fn () => app(AuthorizationCache::class))
+        ->toThrow(InvalidCacheConfiguration::class, $message);
+})->with([
+    'enabled flag' => ['enabled', 'yes', 'value must be a boolean'],
+    'non-integer ttl' => ['ttl', '300', 'value must be a positive integer'],
+    'non-positive ttl' => ['ttl', 0, 'value must be a positive integer'],
+    'non-integer version ttl' => ['version_ttl', '3600', 'value must be a positive integer'],
+    'non-positive version ttl' => ['version_ttl', -1, 'value must be a positive integer'],
+    'empty prefix' => ['prefix', '', 'value must be a non-empty string'],
+    'invalid store type' => ['store', false, 'value must be null or a non-empty string'],
+    'missing store' => ['store', 'missing-store', 'cache store [missing-store] is not configured'],
+]);
+
 it('does not resolve or validate cache configuration when caching is disabled', function (): void {
     config([
         'dominion.cache.enabled' => false,

@@ -2,10 +2,54 @@
 
 namespace Infinity\Dominion\Services;
 
-use InvalidArgumentException;
+use Infinity\Dominion\Exceptions\InvalidTableConfiguration;
 
 class TableRegistry
 {
+    /** @var array<string, string> */
+    protected array $tables;
+
+    public function __construct()
+    {
+        $tables = config('dominion.tables');
+        $required = [
+            'roles',
+            'permissions',
+            'role_permissions',
+            'role_assignments',
+            'permission_grants',
+            'permission_denials',
+        ];
+
+        if (! is_array($tables)) {
+            throw InvalidTableConfiguration::for('the value must be an array.');
+        }
+
+        $missing = array_diff($required, array_keys($tables));
+
+        if ($missing !== []) {
+            throw InvalidTableConfiguration::for('missing required keys: '.implode(', ', $missing).'.');
+        }
+
+        $unknown = array_diff(array_keys($tables), $required);
+
+        if ($unknown !== []) {
+            throw InvalidTableConfiguration::for('unsupported keys: '.implode(', ', $unknown).'.');
+        }
+
+        foreach ($tables as $key => $table) {
+            if (! is_string($table) || trim($table) === '') {
+                throw InvalidTableConfiguration::for("[{$key}] must be a non-empty string.");
+            }
+        }
+
+        if (count($tables) !== count(array_unique($tables))) {
+            throw InvalidTableConfiguration::for('every table name must be unique.');
+        }
+
+        $this->tables = $tables;
+    }
+
     public function roles(): string
     {
         return $this->table('roles');
@@ -38,12 +82,6 @@ class TableRegistry
 
     protected function table(string $key): string
     {
-        $table = config("dominion.tables.{$key}");
-
-        if (! is_string($table) || trim($table) === '') {
-            throw new InvalidArgumentException("The configured Dominion table [{$key}] must be a non-empty string.");
-        }
-
-        return $table;
+        return $this->tables[$key];
     }
 }
