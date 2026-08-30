@@ -16,7 +16,7 @@ class AuthorizationCache implements AuthorizationCacheContract
     /**
      * The configured cache repository.
      */
-    protected Repository $cache;
+    protected ?Repository $cache = null;
 
     /**
      * Determine whether decision caching is enabled.
@@ -26,17 +26,17 @@ class AuthorizationCache implements AuthorizationCacheContract
     /**
      * The decision cache lifetime in seconds.
      */
-    protected int $ttl;
+    protected int $ttl = 0;
 
     /**
      * The cache lifetime for principal and catalog version tokens.
      */
-    protected int $versionTtl;
+    protected int $versionTtl = 0;
 
     /**
      * The prefix applied to Dominion cache keys.
      */
-    protected string $prefix;
+    protected string $prefix = 'dominion';
 
     /**
      * Create a new authorization cache instance.
@@ -44,6 +44,11 @@ class AuthorizationCache implements AuthorizationCacheContract
     public function __construct()
     {
         $this->enabled = (bool) config('dominion.cache.enabled', true);
+
+        if (! $this->enabled) {
+            return;
+        }
+
         $this->ttl = (int) config('dominion.cache.ttl', 300);
         $this->versionTtl = (int) config('dominion.cache.version_ttl', 3600);
         $this->prefix = (string) config('dominion.cache.prefix', 'dominion');
@@ -63,7 +68,7 @@ class AuthorizationCache implements AuthorizationCacheContract
             return null;
         }
 
-        $value = $this->cache->get($this->decisionKey($principal, $permission, $scope));
+        $value = $this->repository()->get($this->decisionKey($principal, $permission, $scope));
 
         return is_string($value) ? AuthorizationDecision::tryFrom($value) : null;
     }
@@ -74,7 +79,7 @@ class AuthorizationCache implements AuthorizationCacheContract
     public function put(Model $principal, string $permission, AuthorizationScope $scope, AuthorizationDecision $decision): void
     {
         if ($this->enabled) {
-            $this->cache->put($this->decisionKey($principal, $permission, $scope), $decision->value, $this->ttl);
+            $this->repository()->put($this->decisionKey($principal, $permission, $scope), $decision->value, $this->ttl);
         }
     }
 
@@ -83,6 +88,10 @@ class AuthorizationCache implements AuthorizationCacheContract
      */
     public function invalidatePrincipal(Model $principal): void
     {
+        if (! $this->enabled) {
+            return;
+        }
+
         $this->rotateVersion($this->principalVersionKey($this->principalIdentity($principal)));
     }
 
@@ -91,6 +100,10 @@ class AuthorizationCache implements AuthorizationCacheContract
      */
     public function invalidateCatalog(): void
     {
+        if (! $this->enabled) {
+            return;
+        }
+
         $this->rotateVersion($this->catalogVersionKey());
     }
 
@@ -142,7 +155,7 @@ class AuthorizationCache implements AuthorizationCacheContract
      */
     protected function version(string $key): string
     {
-        $version = $this->cache->get($key);
+        $version = $this->repository()->get($key);
 
         return is_string($version) ? $version : 'initial';
     }
@@ -153,7 +166,19 @@ class AuthorizationCache implements AuthorizationCacheContract
     protected function rotateVersion(string $key): void
     {
         if ($this->enabled) {
-            $this->cache->put($key, bin2hex(random_bytes(16)), $this->versionTtl);
+            $this->repository()->put($key, bin2hex(random_bytes(16)), $this->versionTtl);
         }
+    }
+
+    /**
+     * Return the cache repository initialized for enabled caching.
+     */
+    protected function repository(): Repository
+    {
+        if ($this->cache === null) {
+            throw new \LogicException('The Dominion cache repository is unavailable while caching is disabled.');
+        }
+
+        return $this->cache;
     }
 }

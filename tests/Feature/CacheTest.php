@@ -285,3 +285,44 @@ it('rejects version lifetimes that cannot safely outlive decisions', function ()
     expect(fn () => app(AuthorizationCache::class))
         ->toThrow(InvalidCacheConfiguration::class, 'must be greater than the decision TTL');
 });
+
+it('does not resolve or validate cache configuration when caching is disabled', function (): void {
+    config([
+        'dominion.cache.enabled' => false,
+        'dominion.cache.store' => 'missing-store',
+        'dominion.cache.ttl' => 300,
+        'dominion.cache.version_ttl' => 1,
+    ]);
+    $this->app->forgetInstance(AuthorizationCache::class);
+
+    $cache = app(AuthorizationCache::class);
+    $unsaved = new User;
+
+    $cache->invalidatePrincipal($unsaved);
+    $cache->invalidateCatalog();
+
+    expect($cache->get($unsaved, 'posts.edit', AuthorizationScope::global()))->toBeNull();
+});
+
+it('authorizes and mutates assignments without a configured cache store when caching is disabled', function (): void {
+    config([
+        'dominion.cache.enabled' => false,
+        'dominion.cache.store' => 'missing-store',
+        'dominion.cache.ttl' => 300,
+        'dominion.cache.version_ttl' => 1,
+    ]);
+    $this->app->forgetInstance(AuthorizationCache::class);
+
+    $user = User::create([
+        'name' => 'Uncached User',
+        'email' => 'uncached@example.com',
+        'password' => Hash::make('password'),
+    ]);
+    $permission = Permission::create(['name' => 'posts.edit']);
+
+    expect($user->hasPermission($permission))->toBeFalse();
+
+    $user->grantPermission($permission);
+
+    expect($user->hasPermission($permission))->toBeTrue();
+});

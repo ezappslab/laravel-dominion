@@ -201,6 +201,8 @@ Configure it under `services.tenant_context`. Tenant models, integer keys, strin
 
 The database is always the assignment source of truth. Cache stores computed decisions only. Principal and catalog version numbers are embedded in cache keys, so invalidation works across taggable and non-taggable Laravel stores without flushing unrelated application cache entries.
 
+When `cache.enabled` is `false`, Dominion does not resolve a cache store or validate cache lifetime settings; authorization continues directly against the database.
+
 Mutations performed through Dominion's assignment APIs invalidate principal versions. `Role::syncPermissions()` and `dominion:sync` invalidate the catalog version. Direct relationship or table writes are unsupported and do not trigger invalidation.
 
 ## Customization
