@@ -13,10 +13,18 @@ return new class extends Migration
             $table->string('name');
             $table->timestamps();
         });
+
+        Schema::create('soft_deleting_principals', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->softDeletes();
+            $table->timestamps();
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('soft_deleting_principals');
         Schema::dropIfExists('tenants');
     }
 };

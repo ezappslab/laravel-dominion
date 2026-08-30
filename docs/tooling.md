@@ -1,40 +1,123 @@
-# Package Starter Kit
+# Contributing to Laravel Dominion
 
-This package is a robust skeleton starter kit designed to simplify the creation of new Laravel packages. It provides a foundation with pre-configured tools and best practices to help you focus on building your package functionality efficiently.
+Thank you for contributing to Laravel Dominion. This guide describes the local development workflow and the checks expected before a change is submitted.
 
-## Included Tools and Dependencies
+## Requirements
 
-### Production Dependencies
-- **[spatie/laravel-package-tools](https://github.com/spatie/laravel-package-tools):**  
-  A utility package by Spatie to streamline common tasks in Laravel package development, such as registering config files, routes, and migrations.
+- PHP 8.4 or newer
+- Composer 2
+- SQLite support for PHP
 
-### Development Dependencies
-The starter kit comes with several tools aimed at improving code quality, testing, and development experience:
+Dominion supports Laravel 12 and 13. Composer resolves the compatible framework and Testbench versions for the dependency set being tested.
 
-- **[larastan/larastan](https://github.com/nunomaduro/larastan):**  
-  Static analysis for Laravel using PHPStan, helping catch bugs and enforce strong typing.
+## Local setup
 
-- **[laravel/pint](https://github.com/laravel/pint):**  
-  Opinionated code style fixer that enforces Laravel’s coding standards with zero configuration.
+Clone the repository and install its dependencies:
 
-- **[orchestra/pest-plugin-testbench](https://github.com/orchestral/testbench):**  
-  Pest plugin for Testbench, tailored for efficient Laravel package testing.
+```bash
+composer install
+```
 
-- **[orchestra/testbench](https://github.com/orchestral/testbench):**  
-  Simulates a Laravel app to test packages outside a full Laravel project.
+Composer runs Testbench package discovery automatically. If the workbench needs to be rebuilt explicitly, run:
 
-- **[pestphp/pest](https://pestphp.com):**  
-  Elegant and expressive PHP testing framework with a focus on simplicity and readability.
+```bash
+composer build
+```
 
-- **[pestphp/pest-plugin](https://github.com/pestphp/pest-plugin):**  
-  Core framework for building and extending custom PestPHP plugins.
+The Testbench workbench provides the Laravel application used by the feature tests. Package source belongs in `src`, while workbench-only application models and fixtures belong in `workbench`.
 
-- **[pestphp/pest-plugin-laravel](https://github.com/pestphp/pest-plugin-laravel):**  
-  Laravel integration plugin for Pest, adding tailored helpers and test features.
+## Tests
 
-- **[pestphp/pest-plugin-arch](https://github.com/pestphp/pest-plugin-arch):**  
-  Architecture testing plugin for enforcing structural rules in Laravel projects.
+Run the complete Pest suite with:
 
-- **[pestphp/pest-plugin-mutate](https://github.com/pestphp/pest-plugin-mutate):**  
-  Mutation testing plugin to assess and strengthen test coverage in Pest.
+```bash
+composer test
+```
 
+To run a specific file or filter, invoke Pest directly:
+
+```bash
+vendor/bin/pest tests/Feature/PrincipalDeletionTest.php
+vendor/bin/pest --filter="preserves assignments"
+```
+
+Tests use an in-memory SQLite database and the array cache store as configured in `phpunit.xml`.
+
+Place tests according to their scope:
+
+- `tests/Unit` for isolated domain behavior that does not require Laravel integration or a database.
+- `tests/Feature` for service-container, Eloquent, database, cache, command, Gate, and package integration behavior.
+- `tests/Support` for test-only models, enums, fakes, and shared fixtures.
+
+Every bug fix should include a regression test that fails without the fix. Prefer observable behavior over assertions against implementation details.
+
+## Code quality
+
+### Fix and validate
+
+Run the complete quality suite with:
+
+```bash
+composer lint
+```
+
+This command can change tracked PHP files because it executes the following tools in order:
+
+1. `vendor/bin/pint --ansi` formats files and applies style fixes.
+2. `vendor/bin/phpstan analyse --verbose --ansi` reports static-analysis errors without changing files.
+3. `vendor/bin/rector process --dry-run --ansi` reports proposed refactors without applying them.
+
+Review the diff after running `composer lint`, because Pint may have updated the source or tests.
+
+### Validate without changing files
+
+To see the same formatting, static-analysis, and refactoring results without changing tracked files, run:
+
+```bash
+vendor/bin/pint --test --ansi
+vendor/bin/phpstan analyse --verbose --ansi
+vendor/bin/rector process --dry-run --ansi
+```
+
+Pint's `--test` option reports formatting differences instead of fixing them. PHPStan only analyzes the code, and Rector's `--dry-run` option reports proposed changes without applying them. These tools may create ignored runtime cache files, but they do not modify tracked source files in this mode.
+
+Tests and whitespace validation are also non-changing checks:
+
+```bash
+composer test
+git diff --check
+```
+
+## Development conventions
+
+- Follow the existing namespace and directory structure.
+- Use Laravel helpers and framework conventions where they improve clarity.
+- Keep public behavior compatible unless the change is intentionally documented as breaking.
+- Add configuration validation for invalid values while avoiding unnecessary work during package boot.
+- Keep principal, tenant, and table identifier handling consistent with the published schema configuration.
+- Use database transactions for multi-table authorization mutations.
+- Defer cache invalidation until a transaction commits successfully.
+
+Authorization assignments must be mutated through Dominion's assignment API, including `assignRole`, `removeRole`, `grantPermission`, `denyPermission`, `revokePermission`, and `assignAuthorizationProfile`. Do not use relationship mutation methods or write directly to Dominion tables; doing so bypasses conflict handling, events, transactions, and cache invalidation.
+
+## Documentation
+
+Update the README or relevant documentation whenever a change affects installation, configuration, public APIs, supported behavior, or upgrade requirements. Examples should use the current Dominion API and should be covered by tests where practical.
+
+## Before submitting a change
+
+Run the following checks from a clean working tree:
+
+```bash
+composer test
+composer lint
+git diff --check
+```
+
+Then verify that:
+
+- New behavior and regressions are covered by tests.
+- Public-facing changes are documented.
+- Configuration defaults and published migrations remain compatible.
+- No generated files, debugging output, or unrelated formatting changes are included.
+- The complete test suite, static analysis, formatting, and Rector checks pass.

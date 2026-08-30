@@ -5,6 +5,7 @@ namespace Infinity\Dominion\Policies;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Database\Eloquent\Model;
 use Infinity\Dominion\Contracts\AuthorizationResolver;
+use Infinity\Dominion\Contracts\DominionPrincipal;
 use Infinity\Dominion\Contracts\TenantContext;
 
 class DefaultPolicy
@@ -14,19 +15,19 @@ class DefaultPolicy
      *
      * Maps {model_table}.{ability} and delegates to AuthorizationResolver.
      */
-    public function __call(string $ability, array $arguments): Response|bool
+    public function __call(string $ability, array $arguments): Response|bool|null
     {
         $user = $arguments[0] ?? null;
         $model = $arguments[1] ?? null;
 
-        if (! $user instanceof Model || ! method_exists($user, 'hasPermission')) {
-            return false;
+        if (! $user instanceof Model || ! $user instanceof DominionPrincipal) {
+            return null;
         }
 
-        $tenantId = app(TenantContext::class)->getTenantId();
+        $scope = app(TenantContext::class)->currentScope();
         $permission = $this->resolvePermissionName($ability, $model);
 
-        return app(AuthorizationResolver::class)->hasPermission($user, $permission, $tenantId);
+        return app(AuthorizationResolver::class)->hasPermission($user, $permission, $scope);
     }
 
     /**
