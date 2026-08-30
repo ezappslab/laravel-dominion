@@ -6,16 +6,20 @@ use Infinity\Dominion\Contracts\PermissionValueResolver;
 use Infinity\Dominion\Contracts\RoleValueResolver;
 use Infinity\Dominion\Contracts\TenantContext;
 use Infinity\Dominion\DominionServiceProvider;
+use Infinity\Dominion\Models\Role;
 use Infinity\Dominion\Services\DefaultPermissionValueResolver;
 use Infinity\Dominion\Services\DefaultRoleValueResolver;
 use Infinity\Dominion\Services\DefaultTenantContext;
+use Infinity\Dominion\Services\DominionDatabase;
+use Infinity\Dominion\Services\ModelRegistry;
+use InvalidArgumentException;
 use ReflectionMethod;
 use RuntimeException;
+use Tests\Support\ConnectedPermission;
+use Tests\Support\ConnectedRole;
 use Tests\Support\CustomTenantContext;
-use Tests\Support\TestPermission;
-use Tests\Support\TestRole;
 
-it('binds default services', function () {
+it('binds default services', function (): void {
     expect(app(TenantContext::class))
         ->toBeInstanceOf(DefaultTenantContext::class)
         ->and(app(PermissionValueResolver::class))
@@ -24,16 +28,10 @@ it('binds default services', function () {
         ->toBeInstanceOf(DefaultRoleValueResolver::class);
 });
 
-it('can override a service via config', function () {
+it('can override a service via config', function (): void {
     config(['dominion.services.tenant_context' => CustomTenantContext::class]);
 
-    // Re-register or just check if it returns custom instance if we force it?
-    // Since it's a singleton bound in packageRegistered, we might need to swap it in app or re-run registration if possible.
-    // Actually, in tests, usually we can just swap or the config is already set before provider registers if we use RefreshDatabase or similar,
-    // but here we are in a running app.
-
-    // For testing purposes, let's manually bind it to see if it works as intended when config is changed.
-    $this->app->singleton(TenantContext::class, function ($app) {
+    $this->app->singleton(TenantContext::class, function () {
         $class = config('dominion.services.tenant_context');
 
         return new $class;
@@ -41,36 +39,42 @@ it('can override a service via config', function () {
 
     expect(app(TenantContext::class))
         ->toBeInstanceOf(CustomTenantContext::class)
-        ->and(app(TenantContext::class)->getTenantId())
-        ->toBe(123);
+        ->and(app(TenantContext::class)->currentScope()->tenantId)
+        ->toBe('123');
 });
 
-it('normalizes permission enums', function () {
-    $resolver = app(PermissionValueResolver::class);
+it('uses the shared connection configured on the catalog models', function (): void {
+    config([
+        'database.connections.dominion' => config('database.connections.sqlite'),
+        'dominion.models.role' => ConnectedRole::class,
+        'dominion.models.permission' => ConnectedPermission::class,
+    ]);
 
-    expect($resolver->resolve(TestPermission::CREATE))
-        ->toBe('posts.create')
-        ->and($resolver->resolve(TestPermission::UPDATE))
-        ->toBe('posts.update');
+    expect(app(DominionDatabase::class)->connection()->getName())->toBe('dominion');
 });
 
-it('normalizes role enums', function () {
-    $resolver = app(RoleValueResolver::class);
+it('rejects catalog models that use different connections', function (): void {
+    config([
+        'database.connections.dominion' => config('database.connections.sqlite'),
+        'dominion.models.role' => Role::class,
+        'dominion.models.permission' => ConnectedPermission::class,
+    ]);
 
-    expect($resolver->resolve(TestRole::ADMIN))
-        ->toBe('ADMIN')
-        ->and($resolver->resolve(TestRole::EDITOR))
-        ->toBe('EDITOR');
+    expect(fn () => app(DominionDatabase::class)->connection())
+        ->toThrow(InvalidArgumentException::class, 'must use the same database connection');
 });
 
-it('throws exception if service does not implement contract', closure: function () {
+it('rejects catalog models that do not extend the package models', function (): void {
+    config(['dominion.models.role' => \stdClass::class]);
+
+    expect(fn () => app(ModelRegistry::class)->roleModel())
+        ->toThrow(InvalidArgumentException::class, 'role model must extend');
+});
+
+it('throws exception if service does not implement contract', closure: function (): void {
     config(['dominion.services.tenant_context' => \stdClass::class]);
 
-    // We need to trigger the validation.
-    // Since it happens in packageBooted, and the package is already booted in TestCase,
-    // we might need to call it manually.
-
-    $this->app->singleton(TenantContext::class, function ($app) {
+    $this->app->singleton(TenantContext::class, function () {
         return new \stdClass;
     });
 

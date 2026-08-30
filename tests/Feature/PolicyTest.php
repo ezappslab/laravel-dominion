@@ -2,18 +2,25 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 use Infinity\Dominion\Contracts\TenantContext;
+use Infinity\Dominion\Domain\AuthorizationScope;
 use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
 use Tests\Support\Post;
 use Workbench\App\Models\User;
 
-it('authorizes via policy correctly', function () {
-    config(['dominion.policy.models' => [Post::class]]);
+it('abstains for principals that are not enabled for Dominion', function (): void {
+    $user = new class extends Authenticatable {};
+    $policy = app(config('dominion.policy.class'));
 
-    Gate::policy(Post::class, config('dominion.policy.class'));
+    expect($policy->update($user, new Post))->toBeNull();
+});
+
+it('authorizes via policy correctly', function (): void {
+    config(['dominion.policy.models' => [Post::class]]);
 
     $user = User::create([
         'name' => 'John Doe',
@@ -32,7 +39,56 @@ it('authorizes via policy correctly', function () {
     expect($user->can('posts.update', $post))->toBeTrue();
 });
 
-it('authorizes via policy with roles', function () {
+it('maps standard policy abilities to table permissions', function (): void {
+    config(['dominion.policy.models' => [Post::class]]);
+
+    Gate::policy(Post::class, config('dominion.policy.class'));
+
+    $user = User::create([
+        'name' => 'John Doe',
+        'email' => 'policy@example.com',
+        'password' => Hash::make('password'),
+    ]);
+    $post = new Post;
+
+    Permission::create(['name' => 'posts.update']);
+    $user->allow('posts.update');
+
+    expect($user->can('update', $post))->toBeTrue();
+});
+
+it('maps class-based policy abilities to table permissions', function (): void {
+    config(['dominion.policy.models' => [Post::class]]);
+    Gate::policy(Post::class, config('dominion.policy.class'));
+
+    $user = User::create([
+        'name' => 'John Doe',
+        'email' => 'class-policy@example.com',
+        'password' => Hash::make('password'),
+    ]);
+    Permission::create(['name' => 'posts.create']);
+    $user->allow('posts.create');
+
+    $policy = app(config('dominion.policy.class'));
+
+    expect($policy->create($user, Post::class))->toBeTrue();
+});
+
+it('uses an unqualified ability when no resource model is provided', function (): void {
+    $user = User::create([
+        'name' => 'John Doe',
+        'email' => 'unqualified-policy@example.com',
+        'password' => Hash::make('password'),
+    ]);
+    Permission::create(['name' => 'publish']);
+    $user->allow('publish');
+
+    $policy = app(config('dominion.policy.class'));
+
+    expect($policy->publish($user))->toBeTrue();
+});
+
+it('authorizes via policy with roles', function (): void {
     config(['dominion.policy.models' => [Post::class]]);
 
     Gate::policy(Post::class, config('dominion.policy.class'));
@@ -58,7 +114,7 @@ it('authorizes via policy with roles', function () {
     expect($user->can('posts.delete', $post))->toBeTrue();
 });
 
-it('is tenant aware via policy', function () {
+it('is tenant aware via policy', function (): void {
     config(['dominion.policy.models' => [Post::class]]);
 
     Gate::policy(Post::class, config('dominion.policy.class'));
@@ -77,14 +133,14 @@ it('is tenant aware via policy', function () {
     expect($user->can('posts.view', $post))->toBeFalse();
 
     $this->mock(TenantContext::class)
-        ->shouldReceive('getTenantId')
-        ->andReturn(1);
+        ->shouldReceive('currentScope')
+        ->andReturn(AuthorizationScope::tenant(1));
 
     expect($user->can('posts.view', $post))->toBeTrue();
 
     $this->mock(TenantContext::class)
-        ->shouldReceive('getTenantId')
-        ->andReturn(2);
+        ->shouldReceive('currentScope')
+        ->andReturn(AuthorizationScope::tenant(2));
 
     expect($user->can('posts.view', $post))->toBeFalse();
 });

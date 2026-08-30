@@ -2,172 +2,122 @@
 
 namespace Infinity\Dominion\Traits;
 
-use Illuminate\Contracts\Container\BindingResolutionException;
-use Illuminate\Contracts\Container\CircularDependencyException;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Infinity\Dominion\Contracts\AuthorizationResolver;
-use Infinity\Dominion\Contracts\PermissionValueResolver;
-use Infinity\Dominion\Contracts\TenantContext;
-use Infinity\Dominion\Models\Permission;
-use Infinity\Dominion\Services\AuthorizationCache;
-use Workbench\App\Models\User;
+use Infinity\Dominion\Domain\AuthorizationDecision;
+use Infinity\Dominion\Domain\AuthorizationScope;
+use Infinity\Dominion\Services\AssignmentService;
+use Infinity\Dominion\Services\ConfigurationValidator;
+use Infinity\Dominion\Services\ModelRegistry;
+use Infinity\Dominion\Services\TableRegistry;
 
 trait HasPermissions
 {
+    use CleansDominionAssignments;
+    use ResolvesAuthorizationScope;
+
     /**
-     * Defines a polymorphic many-to-many relationship with the Permission model.
-     *
-     * @return MorphToMany The relationship query builder for the permissions associated with the model.
+     * Get every directly granted permission across all scopes.
      */
     public function permissions(): MorphToMany
     {
-        return $this->morphToMany(Permission::class, 'permissionable', 'permissionables')
-            ->withPivot('tenant_id')
+        return $this->morphToMany(
+            app(ModelRegistry::class)->permissionModel(),
+            'principal',
+            app(TableRegistry::class)->permissionGrants(),
+        )
+            ->withPivot(['tenant_type', 'tenant_id', 'scope_key'])
             ->withTimestamps();
     }
 
     /**
-     * Retrieves the permissions that have been explicitly denied for the current model.
-     *
-     * @return MorphToMany A morph-to-many relationship instance representing the denied permissions.
+     * Get every directly denied permission across all scopes.
      */
     public function deniedPermissions(): MorphToMany
     {
-        return $this->morphToMany(Permission::class, 'permissionable', 'denied_permissionables')
-            ->withPivot('tenant_id')
+        return $this->morphToMany(
+            app(ModelRegistry::class)->permissionModel(),
+            'principal',
+            app(TableRegistry::class)->permissionDenials(),
+        )
+            ->withPivot(['tenant_type', 'tenant_id', 'scope_key'])
             ->withTimestamps();
     }
 
     /**
-     * Grants the specified permission to the context, optionally scoped to a specific tenant.
-     *
-     * @param  mixed  $permission  The permission to grant. This can be an instance of the Permission model,
-     *                             a numeric value representing the ID, or a reference that can be resolved to a permission name.
-     * @param  mixed  $tenantId  Optional. The tenant ID to scope the permission to. If not provided, the current tenant
-     *                           from the TenantContext will be used.
-     * @return User|HasPermissions Returns the current instance for method chaining.
-     *
-     * @throws BindingResolutionException If the TenantContext binding cannot be resolved.
-     * @throws CircularDependencyException If a circular dependency is detected during resolution.
+     * Grant a permission in the current, explicit tenant, or global scope.
      */
-    public function allow(mixed $permission, mixed $tenantId = null): self
+    public function grantPermission(mixed $permission, AuthorizationScope|Model|string|int|null $tenant = null): self
     {
-        $permissionId = $this->resolvePermissionId($permission);
-
-        if ($permissionId === null) {
-            return $this;
-        }
-
-        $tenantId = $tenantId ?? app(TenantContext::class)->getTenantId();
-
-        $this->permissions()->attach($permissionId, [
-            'tenant_id' => $tenantId,
-        ]);
-
-        app(AuthorizationCache::class)->flushFor($this, $tenantId);
+        app(AssignmentService::class)->grant($this, $permission, $this->authorizationScope($tenant));
 
         return $this;
     }
 
     /**
-     * Denies the specified permission for a given tenant context.
-     *
-     * @param  mixed  $permission  The permission to deny. This can be an instance of the Permission model,
-     *                             a numeric value representing the ID, or a reference that can be resolved to a permission name.
-     * @param  mixed|null  $tenantId  The ID of the tenant for which the permission is denied. If null, the current tenant context is used.
-     * @return User|HasPermissions The current instance for method chaining.
-     *
-     * @throws BindingResolutionException
-     * @throws CircularDependencyException
+     * Backward-compatible alias for granting a permission.
      */
-    public function deny(mixed $permission, mixed $tenantId = null): self
+    public function allow(mixed $permission, AuthorizationScope|Model|string|int|null $tenant = null): self
     {
-        $permissionId = $this->resolvePermissionId($permission);
+        return $this->grantPermission($permission, $tenant);
+    }
 
-        if ($permissionId === null) {
-            return $this;
-        }
-
-        $tenantId = $tenantId ?? app(TenantContext::class)->getTenantId();
-
-        $this->deniedPermissions()->attach($permissionId, [
-            'tenant_id' => $tenantId,
-        ]);
-
-        app(AuthorizationCache::class)->flushFor($this, $tenantId);
+    /**
+     * Deny a permission with precedence over grants and role permissions.
+     */
+    public function denyPermission(mixed $permission, AuthorizationScope|Model|string|int|null $tenant = null): self
+    {
+        app(AssignmentService::class)->deny($this, $permission, $this->authorizationScope($tenant));
 
         return $this;
     }
 
     /**
-     * Determines whether a permission is granted for a tenant-specific or global context.
-     *
-     * @param  mixed  $permission  The permission to check. This can be an instance of the Permission model,
-     *                             a numeric ID, or a reference that can be resolved to a permission name.
-     * @param  mixed  $tenantId  The tenant ID for which the permission is evaluated. If null, the tenant ID
-     *                           is resolved using the TenantContext.
-     * @return bool True if the permission is granted, false otherwise.
+     * Backward-compatible alias for denying a permission.
      */
-    public function hasPermission(mixed $permission, mixed $tenantId = null): bool
+    public function deny(mixed $permission, AuthorizationScope|Model|string|int|null $tenant = null): self
     {
-        $tenantId = $tenantId ?? app(TenantContext::class)->getTenantId();
-
-        return app(AuthorizationResolver::class)->hasPermission($this, $permission, $tenantId);
+        return $this->denyPermission($permission, $tenant);
     }
 
     /**
-     * Determines whether the given permission is denied for a specific tenant.
-     *
-     * @param  int  $permissionId  The ID of the permission to check.
-     * @param  mixed  $tenantId  The ID of the tenant to evaluate. This can be any value that uniquely identifies a tenant.
-     * @return bool True if the permission is denied for the specified tenant, false otherwise.
+     * Remove direct grants and denials for the selected scope.
      */
-    protected function isDenied(int $permissionId, mixed $tenantId): bool
+    public function revokePermission(mixed $permission, AuthorizationScope|Model|string|int|null $tenant = null): self
     {
-        return $this->deniedPermissions()
-            ->where('permissions.id', $permissionId)
-            ->wherePivot('tenant_id', $tenantId)
-            ->exists();
+        app(AssignmentService::class)->revoke($this, $permission, $this->authorizationScope($tenant));
+
+        return $this;
     }
 
     /**
-     * Determines if the given permission is allowed for the specified tenant.
-     *
-     * @param  int  $permissionId  The ID of the permission to check.
-     * @param  mixed  $tenantId  The tenant identifier to check the permission against.
-     *                           This can be of any type that represents a tenant.
-     * @return bool True if the permission is allowed for the given tenant, false otherwise.
+     * Resolve the complete tri-state decision for an ability.
      */
-    protected function isAllowed(int $permissionId, mixed $tenantId): bool
+    public function authorizationDecision(mixed $permission, AuthorizationScope|Model|string|int|null $tenant = null): AuthorizationDecision
     {
-        return $this->permissions()
-            ->where('permissions.id', $permissionId)
-            ->wherePivot('tenant_id', $tenantId)
-            ->exists();
+        return app(AuthorizationResolver::class)->decide($this, $permission, $this->authorizationScope($tenant));
     }
 
     /**
-     * Resolves and returns the ID of the given permission.
-     *
-     * @param  mixed  $permission  The permission to resolve. This can be an instance of the Permission model,
-     *                             a numeric value representing the ID, or a reference that can be resolved to a permission name.
-     * @return int|null The resolved permission ID or null if not found.
-     *
-     * @throws BindingResolutionException
-     * @throws CircularDependencyException
+     * Determine whether the final Dominion decision allows the permission.
      */
-    protected function resolvePermissionId(mixed $permission): ?int
+    public function hasPermission(mixed $permission, AuthorizationScope|Model|string|int|null $tenant = null): bool
     {
-        if ($permission instanceof Permission) {
-            return $permission->id;
-        }
+        return $this->authorizationDecision($permission, $tenant) === AuthorizationDecision::Allow;
+    }
 
-        if (is_numeric($permission)) {
-            return (int) $permission;
-        }
+    /**
+     * Apply a named role and permission profile atomically.
+     */
+    public function assignAuthorizationProfile(
+        string $profile,
+        AuthorizationScope|Model|string|int|null $tenant = null,
+    ): self {
+        $definition = app(ConfigurationValidator::class)->profile($profile);
 
-        $permissionName = app(PermissionValueResolver::class)->resolve($permission);
+        app(AssignmentService::class)->applyProfile($this, $definition, $this->authorizationScope($tenant));
 
-        return Permission::where('name', $permissionName)->first()?->id;
+        return $this;
     }
 }

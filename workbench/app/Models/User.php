@@ -6,13 +6,14 @@ namespace Workbench\App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Infinity\Dominion\Traits\HasPermissions;
-use Infinity\Dominion\Traits\HasRoles;
+use Infinity\Dominion\Contracts\DominionPrincipal;
+use Infinity\Dominion\Traits\HasDominionAuthorization;
+use Workbench\Database\Factories\UserFactory;
 
-class User extends Authenticatable
+class User extends Authenticatable implements DominionPrincipal
 {
-    /** @use HasFactory<\Workbench\Database\Factories\UserFactory> */
-    use HasFactory, HasPermissions, HasRoles, Notifiable;
+    /** @use HasFactory<UserFactory> */
+    use HasDominionAuthorization, HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.

@@ -2,26 +2,33 @@
 
 use Illuminate\Support\Facades\Schema;
 
-it('can run the migrations', function () {
-    $this->assertTrue(Schema::hasTable('roles'));
-    $this->assertTrue(Schema::hasTable('permissions'));
-    $this->assertTrue(Schema::hasTable('permission_role'));
-    $this->assertTrue(Schema::hasTable('roleables'));
-    $this->assertTrue(Schema::hasTable('permissionables'));
-    $this->assertTrue(Schema::hasTable('denied_permissionables'));
-
-    $this->assertTrue(Schema::hasTable('tenants'));
-    $this->assertTrue(Schema::hasTable('users'));
+it('can run the migrations', function (): void {
+    expect(Schema::hasTable('roles'))->toBeTrue()
+        ->and(Schema::hasTable('permissions'))->toBeTrue()
+        ->and(Schema::hasTable('permission_role'))->toBeTrue()
+        ->and(Schema::hasTable('role_assignments'))->toBeTrue()
+        ->and(Schema::hasTable('permission_grants'))->toBeTrue()
+        ->and(Schema::hasTable('permission_denials'))->toBeTrue()
+        ->and(Schema::hasTable('tenants'))->toBeTrue()
+        ->and(Schema::hasTable('users'))->toBeTrue();
 });
 
-it('checks the roles table if it has expected columns', function () {
-    $this->assertTrue(Schema::hasColumns('roles', [
-        'id', 'name', 'guard_name', 'created_at', 'updated_at',
-    ]));
+it('checks the roles table if it has expected columns', function (): void {
+    expect(Schema::hasColumns('roles', [
+        'id', 'name', 'created_at', 'updated_at',
+    ]))->toBeTrue()
+        ->and(Schema::hasColumn('roles', 'guard_name'))->toBeFalse();
 });
 
-it('checks the roleables table if it has expected columns', function () {
-    $this->assertTrue(Schema::hasColumns('roleables', [
-        'id', 'role_id', 'roleable_id', 'roleable_type', 'tenant_id', 'created_at', 'updated_at',
-    ]));
+it('checks the permissions table if it has expected columns', function (): void {
+    expect(Schema::hasColumns('permissions', [
+        'id', 'name', 'created_at', 'updated_at',
+    ]))->toBeTrue()
+        ->and(Schema::hasColumn('permissions', 'guard_name'))->toBeFalse();
+});
+
+it('checks the role assignments table if it has expected columns', function (): void {
+    expect(Schema::hasColumns('role_assignments', [
+        'id', 'role_id', 'principal_id', 'principal_type', 'tenant_type', 'tenant_id', 'scope_key', 'created_at', 'updated_at',
+    ]))->toBeTrue();
 });

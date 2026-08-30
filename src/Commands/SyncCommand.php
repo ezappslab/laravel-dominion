@@ -3,167 +3,135 @@
 namespace Infinity\Dominion\Commands;
 
 use Illuminate\Console\Command;
-use Infinity\Dominion\Contracts\PermissionValueResolver;
-use Infinity\Dominion\Contracts\RoleValueResolver;
-use Infinity\Dominion\Models\Permission;
-use Infinity\Dominion\Models\Role;
+use Infinity\Dominion\Contracts\AuthorizationCache;
+use Infinity\Dominion\Contracts\AuthorizationCatalog;
+use Infinity\Dominion\Events\CatalogSynchronized;
+use Infinity\Dominion\Services\DominionDatabase;
+use Infinity\Dominion\Services\ModelRegistry;
 
 class SyncCommand extends Command
 {
     /**
-     * The signature for the 'dominion:sync' command.
-     *
-     * @property string $signature The command signature including options:
-     *                             --dry-run: Display the changes without applying them.
-     *                             --prune: Remove roles and permissions that are no longer defined in enums.
-     *                             --sync-pivots: Sync role-permission assignments (stub).
+     * The name and signature of the console command.
      */
-    protected $signature = 'dominion:sync 
-                            {--dry-run : Display the changes without applying them} 
-                            {--prune : Remove roles and permissions that are no longer defined in enums}
-                            {--sync-pivots : Sync role-permission assignments (stub)}';
+    protected $signature = 'dominion:sync
+                            {--dry-run : Display changes without applying them}
+                            {--prune : Delete catalog entries absent from the configured enums}';
 
     /**
-     * The description for the command.
-     *
-     * @property string $description Provides an explanation of the command's purpose:
-     *                               Sync roles and permissions from defined enums to the database.
+     * The console command description.
      */
-    protected $description = 'Sync roles and permissions from defined enums to the database';
+    protected $description = 'Synchronize Dominion roles, permissions, and role mappings from application enums';
 
     /**
-     * Handles the synchronization of roles and permissions, and optionally processes pivot synchronization.
-     *
-     * @param  RoleValueResolver  $roleResolver  Resolves role values to be synchronized.
-     * @param  PermissionValueResolver  $permissionResolver  Resolves permission values to be synchronized.
-     * @return int Returns a status code indicating the result of the operation.
+     * Execute the console command.
      */
-    public function handle(RoleValueResolver $roleResolver, PermissionValueResolver $permissionResolver): int
-    {
-        $this->syncRoles($roleResolver);
-        $this->syncPermissions($permissionResolver);
+    public function handle(
+        AuthorizationCatalog $catalog,
+        ModelRegistry $models,
+        AuthorizationCache $cache,
+        DominionDatabase $database,
+    ): int {
+        $snapshot = $catalog->snapshot();
+        $roles = $snapshot->roles;
+        $permissions = $snapshot->permissions;
+        $map = $snapshot->rolePermissions;
+        $prune = $this->option('prune') || (bool) config('dominion.catalog.prune', false);
 
-        if ($this->option('sync-pivots')) {
-            $this->info('Pivot syncing is currently a stub.');
+        if ($roles === [] && $permissions === [] && ! $prune) {
+            $this->warn('No Dominion role or permission enums are configured.');
+
+            return self::SUCCESS;
         }
 
-        $this->info('Dominion sync completed.');
+        $this->displayPlan($roles, $permissions, $map);
+
+        if ($this->option('dry-run')) {
+            return self::SUCCESS;
+        }
+
+        $database->connection()->transaction(function () use ($roles, $permissions, $map, $models, $cache, $prune, $database): void {
+            $roleModel = $models->roleModel();
+            $permissionModel = $models->permissionModel();
+            $timestamp = now();
+
+            if ($roles !== []) {
+                $roleModel::query()->insertOrIgnore(array_map(
+                    fn (string $role): array => ['name' => $role, 'created_at' => $timestamp, 'updated_at' => $timestamp],
+                    $roles,
+                ));
+            }
+
+            if ($permissions !== []) {
+                $permissionModel::query()->insertOrIgnore(array_map(
+                    fn (string $permission): array => ['name' => $permission, 'created_at' => $timestamp, 'updated_at' => $timestamp],
+                    $permissions,
+                ));
+            }
+
+            $roleIds = $roleModel::query()->whereIn('name', $roles)->pluck('id', 'name')->all();
+            $permissionIds = $permissionModel::query()->whereIn('name', $permissions)->pluck('id', 'name')->all();
+            $relation = (new $roleModel)->permissions();
+            $connection = $database->connection();
+            $pivot = $connection->table($relation->getTable());
+            $roleForeignKey = $relation->getForeignPivotKeyName();
+            $permissionForeignKey = $relation->getRelatedPivotKeyName();
+            $pivotRows = [];
+
+            foreach ($roleIds as $roleName => $roleId) {
+                foreach ($map[$roleName] ?? [] as $permissionName) {
+                    $pivotRows[] = [
+                        $roleForeignKey => $roleId,
+                        $permissionForeignKey => $permissionIds[$permissionName],
+                        $relation->createdAt() => $timestamp,
+                        $relation->updatedAt() => $timestamp,
+                    ];
+                }
+            }
+
+            if ($roleIds !== []) {
+                $pivot->whereIn($roleForeignKey, array_values($roleIds))->delete();
+            }
+
+            foreach (array_chunk($pivotRows, 500) as $pivotChunk) {
+                $pivot->insert($pivotChunk);
+            }
+
+            if ($prune) {
+                $roles === []
+                    ? $roleModel::query()->delete()
+                    : $roleModel::query()->whereNotIn('name', $roles)->delete();
+                $permissions === []
+                    ? $permissionModel::query()->delete()
+                    : $permissionModel::query()->whereNotIn('name', $permissions)->delete();
+            }
+
+            $connection->afterCommit(function () use ($cache, $roles, $permissions, $map, $prune): void {
+                $cache->invalidateCatalog();
+                event(new CatalogSynchronized($roles, $permissions, $map, $prune));
+            });
+        });
+
+        $this->info('Dominion catalog synchronized.');
 
         return self::SUCCESS;
     }
 
     /**
-     * Synchronizes application roles using the provided resolver and configuration.
+     * Display the catalog synchronization summary.
      *
-     * This method retrieves the role enum configured in the application,
-     * resolves the role names using the provided RoleValueResolver, and ensures
-     * that the roles existing in the database are synchronized with the resolved roles.
-     * New roles are created, existing roles are left unchanged, and if the prune option
-     * is enabled, unused roles are deleted.
-     *
-     * @param  RoleValueResolver  $resolver  Instance responsible for resolving role values from enum cases.
+     * @param  list<string>  $roles
+     * @param  list<string>  $permissions
+     * @param  array<string, list<string>>  $map
      */
-    protected function syncRoles(RoleValueResolver $resolver): void
+    protected function displayPlan(array $roles, array $permissions, array $map): void
     {
-        $roleEnum = config('dominion.role_enum');
-
-        if (! $roleEnum || ! enum_exists($roleEnum)) {
-            $this->warn('No role enum configured or enum does not exist.');
-
-            return;
-        }
-
-        $this->comment('Syncing roles...');
-
-        $definedRoles = [];
-        foreach ($roleEnum::cases() as $case) {
-            $definedRoles[] = $resolver->resolve($case);
-        }
-
-        foreach ($definedRoles as $roleName) {
-            if ($this->option('dry-run')) {
-                $this->line("Would create/update role: {$roleName}");
-
-                continue;
-            }
-
-            Role::firstOrCreate(['name' => $roleName]);
-        }
-
-        if ($this->option('prune')) {
-            $rolesToPrune = Role::whereNotIn('name', $definedRoles)->get();
-
-            foreach ($rolesToPrune as $role) {
-                if ($this->option('dry-run')) {
-                    $this->line("Would delete role: {$role->name}");
-
-                    continue;
-                }
-
-                $role->delete();
-            }
-        }
-    }
-
-    /**
-     * Synchronizes application permissions using the provided resolver and configuration.
-     *
-     * This method retrieves permission enums configured in the application,
-     * resolves them using the provided PermissionValueResolver, and ensures
-     * that the permissions existing in the database are synchronized with the
-     * resolved permissions. New permissions are created, existing permissions
-     * are left unchanged, and if the prune option is enabled, unused permissions
-     * are deleted.
-     *
-     * @param  PermissionValueResolver  $resolver  Instance responsible for resolving permission values from enum cases.
-     */
-    protected function syncPermissions(PermissionValueResolver $resolver): void
-    {
-        $permissionEnums = config('dominion.permission_enums', []);
-
-        if (empty($permissionEnums)) {
-            $this->warn('No permission enums configured.');
-
-            return;
-        }
-
-        $this->comment('Syncing permissions...');
-
-        $definedPermissions = [];
-        foreach ($permissionEnums as $enumClass) {
-            if (! enum_exists($enumClass)) {
-                $this->error("Enum class {$enumClass} does not exist.");
-
-                continue;
-            }
-
-            foreach ($enumClass::cases() as $case) {
-                $definedPermissions[] = $resolver->resolve($case);
-            }
-        }
-
-        foreach ($definedPermissions as $permissionName) {
-            if ($this->option('dry-run')) {
-                $this->line("Would create/update permission: {$permissionName}");
-
-                continue;
-            }
-
-            Permission::firstOrCreate(['name' => $permissionName]);
-        }
-
-        if ($this->option('prune')) {
-            $permissionsToPrune = Permission::whereNotIn('name', $definedPermissions)->get();
-
-            foreach ($permissionsToPrune as $permission) {
-                if ($this->option('dry-run')) {
-                    $this->line("Would delete permission: {$permission->name}");
-
-                    continue;
-                }
-
-                $permission->delete();
-            }
-        }
+        $this->line(sprintf(
+            '%s %d roles, %d permissions, and %d role mappings.',
+            $this->option('dry-run') ? 'Would synchronize' : 'Synchronizing',
+            count($roles),
+            count($permissions),
+            count($map),
+        ));
     }
 }

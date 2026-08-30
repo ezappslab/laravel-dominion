@@ -3,7 +3,7 @@
 use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
 
-it('can attach permission to role', function () {
+it('can attach permission to role', function (): void {
     $role = Role::create(['name' => 'editor']);
     $permission = Permission::create(['name' => 'articles.update']);
 
@@ -15,7 +15,7 @@ it('can attach permission to role', function () {
         ->toBe('articles.update');
 });
 
-it('checks if the inverse relationship works', function () {
+it('checks if the inverse relationship works', function (): void {
     $role = Role::create(['name' => 'editor']);
     $permission = Permission::create(['name' => 'articles.update']);
 
@@ -27,7 +27,7 @@ it('checks if the inverse relationship works', function () {
         ->toBe('editor');
 });
 
-it('checks if the pivot table has timestamps', function () {
+it('checks if the pivot table has timestamps', function (): void {
     $role = Role::create(['name' => 'editor']);
     $permission = Permission::create(['name' => 'articles.update']);
 

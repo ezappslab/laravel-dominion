@@ -7,12 +7,12 @@ use Tests\Support\CustomTenantContext;
 use Tests\Support\TestRole;
 use Workbench\App\Models\User;
 
-beforeEach(function () {
+beforeEach(function (): void {
     Role::create(['name' => 'ADMIN']);
     Role::create(['name' => 'EDITOR']);
 });
 
-it('can assign a role globally', function () {
+it('can assign a role globally', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -28,7 +28,7 @@ it('can assign a role globally', function () {
         ->toBeTrue();
 });
 
-it('can assign a role per tenant', function () {
+it('can assign a role per tenant', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -45,7 +45,7 @@ it('can assign a role per tenant', function () {
         ->toBeFalse();
 });
 
-it('can assign roles using enums', function () {
+it('can assign roles using enums', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -60,7 +60,7 @@ it('can assign roles using enums', function () {
         ->toBeTrue();
 });
 
-it('can remove a role', function () {
+it('can remove a role', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -76,7 +76,7 @@ it('can remove a role', function () {
         ->toBeFalse();
 });
 
-it('can remove a tenant-scoped role', function () {
+it('can remove a tenant-scoped role', function (): void {
     $user = User::create([
         'name' => 'John Doe',
         'email' => 'john@example.com',
@@ -92,7 +92,7 @@ it('can remove a tenant-scoped role', function () {
         ->toBeFalse();
 });
 
-it('respects the current tenant context when adding roles', function () {
+it('respects the current tenant context when adding roles', function (): void {
     config(['dominion.services.tenant_context' => CustomTenantContext::class]);
 
     // Re-bind to apply config change
