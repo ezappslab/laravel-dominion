@@ -3,35 +3,42 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Infinity\Dominion\Services\DominionDatabase;
+use Infinity\Dominion\Services\TableRegistry;
 
 return new class extends Migration
 {
     public function up(): void
     {
         $schema = app(DominionDatabase::class)->connection()->getSchemaBuilder();
+        $tables = app(TableRegistry::class);
 
-        $schema->create('roles', function (Blueprint $table): void {
+        $schema->create($tables->roles(), function (Blueprint $table): void {
             $table->id();
             $table->string('name')->unique();
             $table->timestamps();
         });
 
-        $schema->create('permissions', function (Blueprint $table): void {
+        $schema->create($tables->permissions(), function (Blueprint $table): void {
             $table->id();
             $table->string('name')->unique();
             $table->timestamps();
         });
 
-        $schema->create('permission_role', function (Blueprint $table): void {
-            $table->foreignId('permission_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('role_id')->constrained()->cascadeOnDelete();
+        $schema->create($tables->rolePermissions(), function (Blueprint $table) use ($tables): void {
+            $table->foreignId('permission_id')->constrained($tables->permissions())->cascadeOnDelete();
+            $table->foreignId('role_id')->constrained($tables->roles())->cascadeOnDelete();
             $table->timestamps();
             $table->primary(['permission_id', 'role_id']);
         });
 
-        $createAssignment = function (Blueprint $table, string $foreignKey, string $tableName): void {
+        $createAssignment = function (
+            Blueprint $table,
+            string $foreignKey,
+            string $foreignTable,
+            string $indexPrefix,
+        ): void {
             $table->id();
-            $table->foreignId($foreignKey)->constrained()->cascadeOnDelete();
+            $table->foreignId($foreignKey)->constrained($foreignTable)->cascadeOnDelete();
             $table->morphs('principal');
             $table->string('tenant_type')->nullable();
             $table->string('tenant_id')->nullable();
@@ -39,28 +46,35 @@ return new class extends Migration
             $table->timestamps();
             $table->unique(
                 [$foreignKey, 'principal_type', 'principal_id', 'scope_key'],
-                "{$tableName}_assignment_unique",
+                "{$indexPrefix}_assignment_unique",
             );
             $table->index(
                 ['principal_type', 'principal_id', 'scope_key', $foreignKey],
-                "{$tableName}_lookup_index",
+                "{$indexPrefix}_lookup_index",
             );
         };
 
-        $schema->create('role_assignments', fn (Blueprint $table) => $createAssignment($table, 'role_id', 'role'));
-        $schema->create('permission_grants', fn (Blueprint $table) => $createAssignment($table, 'permission_id', 'permission_grant'));
-        $schema->create('permission_denials', fn (Blueprint $table) => $createAssignment($table, 'permission_id', 'permission_denial'));
+        $schema->create($tables->roleAssignments(), fn (Blueprint $table) => $createAssignment(
+            $table, 'role_id', $tables->roles(), 'dominion_role',
+        ));
+        $schema->create($tables->permissionGrants(), fn (Blueprint $table) => $createAssignment(
+            $table, 'permission_id', $tables->permissions(), 'dominion_permission_grant',
+        ));
+        $schema->create($tables->permissionDenials(), fn (Blueprint $table) => $createAssignment(
+            $table, 'permission_id', $tables->permissions(), 'dominion_permission_denial',
+        ));
     }
 
     public function down(): void
     {
         $schema = app(DominionDatabase::class)->connection()->getSchemaBuilder();
+        $tables = app(TableRegistry::class);
 
-        $schema->dropIfExists('permission_denials');
-        $schema->dropIfExists('permission_grants');
-        $schema->dropIfExists('role_assignments');
-        $schema->dropIfExists('permission_role');
-        $schema->dropIfExists('permissions');
-        $schema->dropIfExists('roles');
+        $schema->dropIfExists($tables->permissionDenials());
+        $schema->dropIfExists($tables->permissionGrants());
+        $schema->dropIfExists($tables->roleAssignments());
+        $schema->dropIfExists($tables->rolePermissions());
+        $schema->dropIfExists($tables->permissions());
+        $schema->dropIfExists($tables->roles());
     }
 };

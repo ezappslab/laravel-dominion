@@ -20,6 +20,7 @@ class DefaultAuthorizationResolver implements AuthorizationResolver
         protected AuthorizationCache $cache,
         protected ModelRegistry $models,
         protected DominionDatabase $database,
+        protected TableRegistry $tables,
     ) {}
 
     /**
@@ -66,27 +67,31 @@ class DefaultAuthorizationResolver implements AuthorizationResolver
             'principal_id' => $principal->getKey(),
         ];
         $scopeKeys = $this->scopeKeys($scope);
+        $denialsTable = $this->tables->permissionDenials();
+        $grantsTable = $this->tables->permissionGrants();
+        $roleAssignmentsTable = $this->tables->roleAssignments();
+        $rolePermissionsTable = $this->tables->rolePermissions();
         $known = $connection->table($permissionTable)
             ->selectRaw('0 as precedence')
             ->where("{$permissionTable}.name", $permission);
-        $denials = $connection->table('permission_denials')
-            ->join($permissionTable, "{$permissionTable}.id", '=', 'permission_denials.permission_id')
+        $denials = $connection->table($denialsTable)
+            ->join($permissionTable, "{$permissionTable}.id", '=', "{$denialsTable}.permission_id")
             ->selectRaw('3 as precedence')
             ->where($identity)
-            ->whereIn('permission_denials.scope_key', $scopeKeys)
+            ->whereIn("{$denialsTable}.scope_key", $scopeKeys)
             ->where("{$permissionTable}.name", $permission);
-        $grants = $connection->table('permission_grants')
-            ->join($permissionTable, "{$permissionTable}.id", '=', 'permission_grants.permission_id')
+        $grants = $connection->table($grantsTable)
+            ->join($permissionTable, "{$permissionTable}.id", '=', "{$grantsTable}.permission_id")
             ->selectRaw('2 as precedence')
             ->where($identity)
-            ->whereIn('permission_grants.scope_key', $scopeKeys)
+            ->whereIn("{$grantsTable}.scope_key", $scopeKeys)
             ->where("{$permissionTable}.name", $permission);
-        $roles = $connection->table('role_assignments')
-            ->join('permission_role', 'permission_role.role_id', '=', 'role_assignments.role_id')
-            ->join($permissionTable, "{$permissionTable}.id", '=', 'permission_role.permission_id')
+        $roles = $connection->table($roleAssignmentsTable)
+            ->join($rolePermissionsTable, "{$rolePermissionsTable}.role_id", '=', "{$roleAssignmentsTable}.role_id")
+            ->join($permissionTable, "{$permissionTable}.id", '=', "{$rolePermissionsTable}.permission_id")
             ->selectRaw('1 as precedence')
             ->where($identity)
-            ->whereIn('role_assignments.scope_key', $scopeKeys)
+            ->whereIn("{$roleAssignmentsTable}.scope_key", $scopeKeys)
             ->where("{$permissionTable}.name", $permission);
 
         $precedence = $connection->query()

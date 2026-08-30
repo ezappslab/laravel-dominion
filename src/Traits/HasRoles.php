@@ -8,6 +8,7 @@ use Infinity\Dominion\Contracts\AuthorizationCatalog;
 use Infinity\Dominion\Domain\AuthorizationScope;
 use Infinity\Dominion\Services\AssignmentService;
 use Infinity\Dominion\Services\ModelRegistry;
+use Infinity\Dominion\Services\TableRegistry;
 
 trait HasRoles
 {
@@ -19,7 +20,11 @@ trait HasRoles
      */
     public function roles(): MorphToMany
     {
-        return $this->morphToMany(app(ModelRegistry::class)->roleModel(), 'principal', 'role_assignments')
+        return $this->morphToMany(
+            app(ModelRegistry::class)->roleModel(),
+            'principal',
+            app(TableRegistry::class)->roleAssignments(),
+        )
             ->withPivot(['tenant_type', 'tenant_id', 'scope_key'])
             ->withTimestamps();
     }
@@ -65,9 +70,10 @@ trait HasRoles
         }
 
         $roleName = app(AuthorizationCatalog::class)->resolveRole($role);
+        $roles = $this->roles();
 
-        return $this->roles()
-            ->where('roles.name', $roleName)
+        return $roles
+            ->where($roles->getRelated()->qualifyColumn('name'), $roleName)
             ->wherePivotIn('scope_key', $scopeKeys)
             ->exists();
     }

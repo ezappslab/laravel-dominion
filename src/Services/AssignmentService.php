@@ -25,6 +25,7 @@ class AssignmentService
         protected AuthorizationCache $cache,
         protected ModelRegistry $models,
         protected DominionDatabase $database,
+        protected TableRegistry $tables,
     ) {}
 
     /**
@@ -56,8 +57,8 @@ class AssignmentService
     {
         $this->database->connection()->transaction(function () use ($principal, $permission, $scope): void {
             $event = $this->permissionEffectMutation(
-                'permission_grants',
-                'permission_denials',
+                $this->tables->permissionGrants(),
+                $this->tables->permissionDenials(),
                 $principal,
                 $permission,
                 $scope,
@@ -74,8 +75,8 @@ class AssignmentService
     {
         $this->database->connection()->transaction(function () use ($principal, $permission, $scope): void {
             $event = $this->permissionEffectMutation(
-                'permission_denials',
-                'permission_grants',
+                $this->tables->permissionDenials(),
+                $this->tables->permissionGrants(),
                 $principal,
                 $permission,
                 $scope,
@@ -111,8 +112,8 @@ class AssignmentService
             }
             foreach ($profile['permissions'] ?? [] as $permission) {
                 $events[] = $this->permissionEffectMutation(
-                    'permission_grants',
-                    'permission_denials',
+                    $this->tables->permissionGrants(),
+                    $this->tables->permissionDenials(),
                     $principal,
                     $permission,
                     $scope,
@@ -121,8 +122,8 @@ class AssignmentService
             }
             foreach ($profile['denials'] ?? [] as $permission) {
                 $events[] = $this->permissionEffectMutation(
-                    'permission_denials',
-                    'permission_grants',
+                    $this->tables->permissionDenials(),
+                    $this->tables->permissionGrants(),
                     $principal,
                     $permission,
                     $scope,
@@ -152,7 +153,11 @@ class AssignmentService
         $cachePrincipal = clone $principal;
 
         $this->database->connection()->transaction(function () use ($identity, $cachePrincipal): void {
-            foreach (['role_assignments', 'permission_grants', 'permission_denials'] as $table) {
+            foreach ([
+                $this->tables->roleAssignments(),
+                $this->tables->permissionGrants(),
+                $this->tables->permissionDenials(),
+            ] as $table) {
                 $this->database->connection()->table($table)->where($identity)->delete();
             }
 
@@ -177,10 +182,10 @@ class AssignmentService
 
         $identity = $this->identity($principal, $scope) + ['role_id' => $roleId];
         $connection = $this->database->connection();
-        $inserted = $connection->table('role_assignments')->insertOrIgnore($identity + $this->timestamps());
+        $inserted = $connection->table($this->tables->roleAssignments())->insertOrIgnore($identity + $this->timestamps());
 
         if ($inserted === 0) {
-            $connection->table('role_assignments')->where($identity)->update(['updated_at' => now()]);
+            $connection->table($this->tables->roleAssignments())->where($identity)->update(['updated_at' => now()]);
         }
 
         return $inserted > 0 ? new RoleAssigned($principal, $roleName, $scope) : null;
@@ -199,7 +204,7 @@ class AssignmentService
             return null;
         }
 
-        $deleted = $this->database->connection()->table('role_assignments')
+        $deleted = $this->database->connection()->table($this->tables->roleAssignments())
             ->where($this->identity($principal, $scope) + ['role_id' => $roleId])
             ->delete();
 
@@ -255,8 +260,8 @@ class AssignmentService
 
         $identity = $this->identity($principal, $scope) + ['permission_id' => $permissionId];
         $connection = $this->database->connection();
-        $deleted = $connection->table('permission_grants')->where($identity)->delete();
-        $deleted += $connection->table('permission_denials')->where($identity)->delete();
+        $deleted = $connection->table($this->tables->permissionGrants())->where($identity)->delete();
+        $deleted += $connection->table($this->tables->permissionDenials())->where($identity)->delete();
 
         return $deleted > 0 ? new PermissionRevoked($principal, $permissionName, $scope) : null;
     }

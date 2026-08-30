@@ -201,6 +201,8 @@ The following services are replaceable through configuration:
 
 Configured services are resolved through Laravel's container and may use constructor injection.
 
+Every Dominion table name can be changed under the `tables` configuration key. Configure table names before publishing and running the package migration; models, relationships, synchronization, assignment cleanup, and authorization queries all use these values.
+
 ## Development
 
 Run the behavioral test suite:

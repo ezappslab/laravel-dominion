@@ -69,6 +69,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Database Tables
+    |--------------------------------------------------------------------------
+    |
+    | Customize these names before publishing and running the migrations.
+    |
+    */
+
+    'tables' => [
+        'roles' => 'roles',
+        'permissions' => 'permissions',
+        'role_permissions' => 'permission_role',
+        'role_assignments' => 'role_assignments',
+        'permission_grants' => 'permission_grants',
+        'permission_denials' => 'permission_denials',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Tenancy
     |--------------------------------------------------------------------------
     |

@@ -10,6 +10,7 @@ use Infinity\Dominion\Domain\AuthorizationScope;
 use Infinity\Dominion\Services\AssignmentService;
 use Infinity\Dominion\Services\ConfigurationValidator;
 use Infinity\Dominion\Services\ModelRegistry;
+use Infinity\Dominion\Services\TableRegistry;
 
 trait HasPermissions
 {
@@ -21,7 +22,11 @@ trait HasPermissions
      */
     public function permissions(): MorphToMany
     {
-        return $this->morphToMany(app(ModelRegistry::class)->permissionModel(), 'principal', 'permission_grants')
+        return $this->morphToMany(
+            app(ModelRegistry::class)->permissionModel(),
+            'principal',
+            app(TableRegistry::class)->permissionGrants(),
+        )
             ->withPivot(['tenant_type', 'tenant_id', 'scope_key'])
             ->withTimestamps();
     }
@@ -31,7 +36,11 @@ trait HasPermissions
      */
     public function deniedPermissions(): MorphToMany
     {
-        return $this->morphToMany(app(ModelRegistry::class)->permissionModel(), 'principal', 'permission_denials')
+        return $this->morphToMany(
+            app(ModelRegistry::class)->permissionModel(),
+            'principal',
+            app(TableRegistry::class)->permissionDenials(),
+        )
             ->withPivot(['tenant_type', 'tenant_id', 'scope_key'])
             ->withTimestamps();
     }

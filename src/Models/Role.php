@@ -9,6 +9,7 @@ use Infinity\Dominion\Contracts\AuthorizationCache;
 use Infinity\Dominion\Events\RolePermissionsSynchronized;
 use Infinity\Dominion\Services\DominionDatabase;
 use Infinity\Dominion\Services\ModelRegistry;
+use Infinity\Dominion\Services\TableRegistry;
 
 /** @property string $name */
 class Role extends Model
@@ -20,6 +21,11 @@ class Role extends Model
         'name',
     ];
 
+    public function getTable(): string
+    {
+        return app(TableRegistry::class)->roles();
+    }
+
     /**
      * Establishes a many-to-many relationship between roles and permissions.
      *
@@ -27,7 +33,10 @@ class Role extends Model
      */
     public function permissions(): BelongsToMany
     {
-        return $this->belongsToMany(app(ModelRegistry::class)->permissionModel(), 'permission_role')
+        return $this->belongsToMany(
+            app(ModelRegistry::class)->permissionModel(),
+            app(TableRegistry::class)->rolePermissions(),
+        )
             ->withTimestamps();
     }
 
