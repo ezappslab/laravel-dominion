@@ -135,6 +135,34 @@ class AssignmentService
     }
 
     /**
+     * Remove every assignment owned by a permanently deleted principal.
+     */
+    public function purgePrincipal(Model $principal): void
+    {
+        $principalId = $principal->getKey();
+
+        if (! $principal->exists || $principalId === null) {
+            throw InvalidPrincipal::notPersisted($principal);
+        }
+
+        $identity = [
+            'principal_type' => $principal->getMorphClass(),
+            'principal_id' => $principalId,
+        ];
+        $cachePrincipal = clone $principal;
+
+        $this->database->connection()->transaction(function () use ($identity, $cachePrincipal): void {
+            foreach (['role_assignments', 'permission_grants', 'permission_denials'] as $table) {
+                $this->database->connection()->table($table)->where($identity)->delete();
+            }
+
+            $this->database->connection()->afterCommit(
+                fn () => $this->cache->invalidatePrincipal($cachePrincipal),
+            );
+        });
+    }
+
+    /**
      * Persist a role assignment without opening a transaction.
      */
     protected function assignRoleMutation(Model $principal, mixed $role, AuthorizationScope $scope): ?RoleAssigned

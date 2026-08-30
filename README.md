@@ -97,6 +97,8 @@ $user->assignRole(Role::Admin, AuthorizationScope::global());
 
 Assignments are idempotent. A repeated assignment updates its timestamp rather than inserting a duplicate.
 
+Deleting a principal permanently removes all of its role, grant, and denial assignments. Soft deletion preserves assignments so authorization state is available after restoration; force deletion removes them.
+
 Passing `null` resolves the configured current tenant. Use `AuthorizationScope::global()` to request global scope explicitly. Global grants and roles inherit into tenant scopes by default.
 
 ## Assignment profiles

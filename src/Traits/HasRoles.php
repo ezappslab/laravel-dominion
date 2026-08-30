@@ -11,6 +11,7 @@ use Infinity\Dominion\Services\ModelRegistry;
 
 trait HasRoles
 {
+    use CleansDominionAssignments;
     use ResolvesAuthorizationScope;
 
     /**

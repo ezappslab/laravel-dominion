@@ -13,6 +13,7 @@ use Infinity\Dominion\Services\ModelRegistry;
 
 trait HasPermissions
 {
+    use CleansDominionAssignments;
     use ResolvesAuthorizationScope;
 
     /**
