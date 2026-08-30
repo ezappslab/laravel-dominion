@@ -99,6 +99,21 @@ Assignments are idempotent. A repeated assignment updates its timestamp rather t
 
 Deleting a principal permanently removes all of its role, grant, and denial assignments. Soft deletion preserves assignments so authorization state is available after restoration; force deletion removes them.
 
+### Mutating assignments
+
+Always mutate authorization state through Dominion's assignment API:
+
+```php
+$user->assignRole($role, tenant: $tenant);
+$user->removeRole($role, tenant: $tenant);
+$user->grantPermission($permission, tenant: $tenant);
+$user->denyPermission($permission, tenant: $tenant);
+$user->revokePermission($permission, tenant: $tenant);
+$user->assignAuthorizationProfile('member', tenant: $tenant);
+```
+
+The `roles()`, `permissions()`, and `deniedPermissions()` relationships are available for querying authorization data. Do not call relationship mutation methods such as `attach`, `detach`, `sync`, `updateExistingPivot`, or write directly to Dominion tables. Those writes bypass Dominion's transactions, grant/denial conflict handling, domain events, and cache invalidation, which can leave authorization decisions stale or inconsistent.
+
 Passing `null` resolves the configured current tenant. Use `AuthorizationScope::global()` to request global scope explicitly. Global grants and roles inherit into tenant scopes by default.
 
 ## Assignment profiles
@@ -186,7 +201,7 @@ Configure it under `services.tenant_context`. Tenant models, integer keys, strin
 
 The database is always the assignment source of truth. Cache stores computed decisions only. Principal and catalog version numbers are embedded in cache keys, so invalidation works across taggable and non-taggable Laravel stores without flushing unrelated application cache entries.
 
-Mutations performed through Dominion APIs invalidate principal versions. `dominion:sync` invalidates the catalog version.
+Mutations performed through Dominion's assignment APIs invalidate principal versions. `Role::syncPermissions()` and `dominion:sync` invalidate the catalog version. Direct relationship or table writes are unsupported and do not trigger invalidation.
 
 ## Customization
 
