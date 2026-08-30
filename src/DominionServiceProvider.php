@@ -20,7 +20,6 @@ use Infinity\Dominion\Services\DefaultPermissionValueResolver;
 use Infinity\Dominion\Services\DefaultRoleValueResolver;
 use Infinity\Dominion\Services\DefaultTenantContext;
 use Infinity\Dominion\Services\EnumAuthorizationCatalog;
-use Infinity\Dominion\Services\TableRegistry;
 use RuntimeException;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
@@ -73,12 +72,9 @@ class DominionServiceProvider extends PackageServiceProvider
     public function packageBooted(): void
     {
         $this->validateServiceImplementations();
-        app(TableRegistry::class);
-        app(AuthorizationCacheContract::class);
-        app(ConfigurationValidator::class)->validateProfiles();
         app(ConfigurationValidator::class)->validatePolicy();
 
-        if ((bool) config('dominion.policy.enabled', true)) {
+        if (config('dominion.policy.enabled', true) === true) {
             $this->registerPolicies();
         }
 

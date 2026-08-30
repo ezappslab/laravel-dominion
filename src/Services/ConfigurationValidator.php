@@ -66,6 +66,10 @@ class ConfigurationValidator
             throw InvalidPolicyConfiguration::for('enabled', 'the value must be a boolean.');
         }
 
+        if (! $enabled) {
+            return;
+        }
+
         $this->validatePolicyClass($defaultPolicy, 'class');
 
         if (! is_array($models)) {

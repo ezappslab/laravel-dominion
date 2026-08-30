@@ -101,6 +101,18 @@ it('uses the default policy for a model mapping without an override', function (
     expect(true)->toBeTrue();
 });
 
+it('does not validate unused policy settings when policy integration is disabled', function (): void {
+    config([
+        'dominion.policy.enabled' => false,
+        'dominion.policy.class' => 'App\\Policies\\MissingPolicy',
+        'dominion.policy.models' => 'not-an-array',
+    ]);
+
+    app(ConfigurationValidator::class)->validatePolicy();
+
+    expect(true)->toBeTrue();
+});
+
 it('rejects invalid policy configuration', function (mixed $value, string $key, string $message): void {
     config(["dominion.policy.{$key}" => $value]);
 

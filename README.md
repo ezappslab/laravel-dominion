@@ -220,6 +220,8 @@ Configured services are resolved through Laravel's container and may use constru
 
 Every Dominion table name can be changed under the `tables` configuration key. Configure table names before publishing and running the package migration; models, relationships, synchronization, assignment cleanup, and authorization queries all use these values.
 
+Dominion keeps application boot validation lightweight. Configured service classes and enabled policy mappings are validated during boot. Profiles are validated when applied, table names when the schema or models use them, cache settings when caching is resolved, and the complete enum catalog when `dominion:sync` runs. This avoids loading unused subsystems during ordinary requests while preserving validation at each execution boundary.
+
 ## Development
 
 Run the behavioral test suite:
