@@ -202,7 +202,7 @@ class EnumAuthorizationCatalog implements AuthorizationCatalog
             foreach ($enum::cases() as $case) {
                 $value = $resolver($case);
 
-                if (trim($value) === '') {
+                if (blank($value)) {
                     throw InvalidCatalogConfiguration::for($configKey, "enum [{$enum}] contains an empty value.");
                 }
 

@@ -4,7 +4,6 @@ namespace Infinity\Dominion\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Support\Facades\Event;
 use Infinity\Dominion\Contracts\AuthorizationCache;
 use Infinity\Dominion\Events\RolePermissionsSynchronized;
 use Infinity\Dominion\Services\DominionDatabase;
@@ -59,7 +58,7 @@ class Role extends Model
             $this->permissions()->sync($ids);
             $connection->afterCommit(function () use ($ids): void {
                 app(AuthorizationCache::class)->invalidateCatalog();
-                Event::dispatch(new RolePermissionsSynchronized($this, $ids));
+                event(new RolePermissionsSynchronized($this, $ids));
             });
         });
 

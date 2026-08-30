@@ -38,7 +38,7 @@ class TableRegistry
         }
 
         foreach ($tables as $key => $table) {
-            if (! is_string($table) || trim($table) === '') {
+            if (! is_string($table) || blank($table)) {
                 throw InvalidTableConfiguration::for("[{$key}] must be a non-empty string.");
             }
         }

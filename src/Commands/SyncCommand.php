@@ -3,7 +3,6 @@
 namespace Infinity\Dominion\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Event;
 use Infinity\Dominion\Contracts\AuthorizationCache;
 use Infinity\Dominion\Contracts\AuthorizationCatalog;
 use Infinity\Dominion\Events\CatalogSynchronized;
@@ -109,7 +108,7 @@ class SyncCommand extends Command
 
             $connection->afterCommit(function () use ($cache, $roles, $permissions, $map, $prune): void {
                 $cache->invalidateCatalog();
-                Event::dispatch(new CatalogSynchronized($roles, $permissions, $map, $prune));
+                event(new CatalogSynchronized($roles, $permissions, $map, $prune));
             });
         });
 

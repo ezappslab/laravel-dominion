@@ -3,7 +3,6 @@
 namespace Infinity\Dominion\Services;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Event;
 use Infinity\Dominion\Contracts\AuthorizationCache;
 use Infinity\Dominion\Contracts\AuthorizationCatalog;
 use Infinity\Dominion\Domain\AuthorizationScope;
@@ -281,7 +280,7 @@ class AssignmentService
             $this->cache->invalidatePrincipal($principal);
 
             foreach ($events as $event) {
-                Event::dispatch($event);
+                event($event);
             }
         });
     }

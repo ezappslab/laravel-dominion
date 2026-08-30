@@ -4,7 +4,6 @@ namespace Infinity\Dominion\Services;
 
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Cache;
 use Infinity\Dominion\Contracts\AuthorizationCache as AuthorizationCacheContract;
 use Infinity\Dominion\Domain\AuthorizationDecision;
 use Infinity\Dominion\Domain\AuthorizationScope;
@@ -68,11 +67,11 @@ class AuthorizationCache implements AuthorizationCacheContract
             throw InvalidCacheConfiguration::for('version_ttl', 'the value must be a positive integer.');
         }
 
-        if (! is_string($prefix) || trim($prefix) === '') {
+        if (! is_string($prefix) || blank($prefix)) {
             throw InvalidCacheConfiguration::for('prefix', 'the value must be a non-empty string.');
         }
 
-        if ($store !== null && (! is_string($store) || trim($store) === '')) {
+        if ($store !== null && (! is_string($store) || blank($store))) {
             throw InvalidCacheConfiguration::for('store', 'the value must be null or a non-empty string.');
         }
 
@@ -88,7 +87,7 @@ class AuthorizationCache implements AuthorizationCacheContract
             throw InvalidCacheConfiguration::unsafeVersionTtl($this->ttl, $this->versionTtl);
         }
 
-        $this->cache = Cache::store($store);
+        $this->cache = cache()->store($store);
     }
 
     /**

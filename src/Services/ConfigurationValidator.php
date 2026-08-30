@@ -29,7 +29,7 @@ class ConfigurationValidator
         }
 
         foreach ($profiles as $name => $definition) {
-            if (! is_string($name) || trim($name) === '') {
+            if (! is_string($name) || blank($name)) {
                 throw InvalidProfileConfiguration::for((string) $name, 'profile names must be non-empty strings.');
             }
 
