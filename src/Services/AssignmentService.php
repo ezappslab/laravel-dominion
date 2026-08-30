@@ -175,9 +175,13 @@ class AssignmentService
             throw new InvalidArgumentException("Role [{$roleName}] is not present in the Dominion catalog. Run dominion:sync first.");
         }
 
-        $inserted = $this->database->connection()->table('role_assignments')->insertOrIgnore(
-            $this->identity($principal, $scope) + ['role_id' => $roleId] + $this->timestamps(),
-        );
+        $identity = $this->identity($principal, $scope) + ['role_id' => $roleId];
+        $connection = $this->database->connection();
+        $inserted = $connection->table('role_assignments')->insertOrIgnore($identity + $this->timestamps());
+
+        if ($inserted === 0) {
+            $connection->table('role_assignments')->where($identity)->update(['updated_at' => now()]);
+        }
 
         return $inserted > 0 ? new RoleAssigned($principal, $roleName, $scope) : null;
     }
@@ -227,6 +231,10 @@ class AssignmentService
         $connection = $this->database->connection();
         $changed = $connection->table($oppositeTable)->where($identity)->delete() > 0;
         $inserted = $connection->table($table)->insertOrIgnore($identity + $this->timestamps());
+
+        if ($inserted === 0) {
+            $connection->table($table)->where($identity)->update(['updated_at' => now()]);
+        }
 
         return $changed || $inserted > 0
             ? new $eventClass($principal, $permissionName, $scope)
