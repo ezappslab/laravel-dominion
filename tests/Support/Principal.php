@@ -3,16 +3,12 @@
 namespace Tests\Support;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Infinity\Dominion\Contracts\DominionPrincipal;
 use Infinity\Dominion\Traits\HasAuthorization;
 
-class SoftDeletingPrincipal extends Model implements DominionPrincipal
+class Principal extends Model implements DominionPrincipal
 {
     use HasAuthorization;
-    use SoftDeletes;
-
-    protected $table = 'principals';
 
     protected $guarded = [];
 

@@ -2,21 +2,14 @@
 
 namespace Infinity\Dominion\Domain;
 
+/**
+ * Represents Dominion's final, deny-by-default authorization result.
+ */
 enum AuthorizationDecision: string
 {
+    /** The evaluated permission is granted. */
     case Allow = 'allow';
-    case Deny = 'deny';
-    case Abstain = 'abstain';
 
-    /**
-     * Convert this decision to the value expected by Laravel's Gate.
-     */
-    public function toGateResult(): ?bool
-    {
-        return match ($this) {
-            self::Allow => true,
-            self::Deny => false,
-            self::Abstain => null,
-        };
-    }
+    /** The evaluated permission is refused. */
+    case Deny = 'deny';
 }

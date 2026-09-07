@@ -2,214 +2,89 @@
 
 namespace Infinity\Dominion\Services;
 
-use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Database\Eloquent\Model;
-use Infinity\Dominion\Contracts\AuthorizationCache as AuthorizationCacheContract;
 use Infinity\Dominion\Domain\AuthorizationDecision;
 use Infinity\Dominion\Domain\AuthorizationScope;
-use Infinity\Dominion\Exceptions\InvalidCacheConfiguration;
-use Infinity\Dominion\Exceptions\InvalidPrincipal;
 
-class AuthorizationCache implements AuthorizationCacheContract
+/**
+ * Memoizes decisions and versions persistent keys without requiring cache tags.
+ */
+class AuthorizationCache
 {
-    /**
-     * The configured cache repository.
-     */
-    protected ?Repository $cache = null;
+    /** @var array<string, AuthorizationDecision> Decisions cached for this service lifetime. */
+    private array $memo = [];
 
     /**
-     * Determine whether decision caching is enabled.
+     * Return a memoized or persistent decision, resolving it only when absent.
+     *
+     * @param  callable(): AuthorizationDecision  $resolver
      */
-    protected bool $enabled;
-
-    /**
-     * The decision cache lifetime in seconds.
-     */
-    protected int $ttl = 0;
-
-    /**
-     * The cache lifetime for principal and catalog version tokens.
-     */
-    protected int $versionTtl = 0;
-
-    /**
-     * The prefix applied to Dominion cache keys.
-     */
-    protected string $prefix = 'dominion';
-
-    /**
-     * Create a new authorization cache instance.
-     */
-    public function __construct()
+    public function remember(Model $principal, AuthorizationScope $scope, string $permission, callable $resolver): AuthorizationDecision
     {
-        $enabled = config('dominion.cache.enabled', true);
+        $key = $this->key($principal, $scope, $permission);
 
-        if (! is_bool($enabled)) {
-            throw InvalidCacheConfiguration::for('enabled', 'the value must be a boolean.');
+        if (isset($this->memo[$key])) {
+            return $this->memo[$key];
         }
 
-        $this->enabled = $enabled;
-
-        if (! $this->enabled) {
-            return;
+        if (! config('dominion.cache.enabled', true)) {
+            return $this->memo[$key] = $resolver();
         }
 
-        $ttl = config('dominion.cache.ttl', 300);
-        $versionTtl = config('dominion.cache.version_ttl', 3600);
-        $prefix = config('dominion.cache.prefix', 'dominion');
-        $store = config('dominion.cache.store');
+        $value = cache()->store(config('dominion.cache.store'))->remember($key, (int) config('dominion.cache.ttl', 300), fn (): string => $resolver()->value);
 
-        if (! is_int($ttl) || $ttl <= 0) {
-            throw InvalidCacheConfiguration::for('ttl', 'the value must be a positive integer.');
-        }
-
-        if (! is_int($versionTtl) || $versionTtl <= 0) {
-            throw InvalidCacheConfiguration::for('version_ttl', 'the value must be a positive integer.');
-        }
-
-        if (! is_string($prefix) || blank($prefix)) {
-            throw InvalidCacheConfiguration::for('prefix', 'the value must be a non-empty string.');
-        }
-
-        if ($store !== null && (! is_string($store) || blank($store))) {
-            throw InvalidCacheConfiguration::for('store', 'the value must be null or a non-empty string.');
-        }
-
-        if (is_string($store) && ! is_array(config("cache.stores.{$store}"))) {
-            throw InvalidCacheConfiguration::for('store', "cache store [{$store}] is not configured.");
-        }
-
-        $this->ttl = $ttl;
-        $this->versionTtl = $versionTtl;
-        $this->prefix = $prefix;
-
-        if ($this->versionTtl <= $this->ttl) {
-            throw InvalidCacheConfiguration::unsafeVersionTtl($this->ttl, $this->versionTtl);
-        }
-
-        $this->cache = cache()->store($store);
+        return $this->memo[$key] = AuthorizationDecision::from($value);
     }
 
     /**
-     * Retrieve a cached decision for the current principal and catalog versions.
+     * Rotate one principal's version and clear request-level decisions.
      */
-    public function get(Model $principal, string $permission, AuthorizationScope $scope): ?AuthorizationDecision
+    public function invalidate(Model $principal): void
     {
-        if (! $this->enabled) {
-            return null;
-        }
+        $this->memo = [];
 
-        $value = $this->repository()->get($this->decisionKey($principal, $permission, $scope));
-
-        return is_string($value) ? AuthorizationDecision::tryFrom($value) : null;
-    }
-
-    /**
-     * Store a decision without relying on cache-tag support.
-     */
-    public function put(Model $principal, string $permission, AuthorizationScope $scope, AuthorizationDecision $decision): void
-    {
-        if ($this->enabled) {
-            $this->repository()->put($this->decisionKey($principal, $permission, $scope), $decision->value, $this->ttl);
+        if (config('dominion.cache.enabled', true)) {
+            cache()->store(config('dominion.cache.store'))->put($this->versionKey($principal), bin2hex(random_bytes(12)), (int) config('dominion.cache.version_ttl', 3600));
         }
     }
 
     /**
-     * Advance the principal version so existing decision keys become stale.
-     */
-    public function invalidatePrincipal(Model $principal): void
-    {
-        if (! $this->enabled) {
-            return;
-        }
-
-        $this->rotateVersion($this->principalVersionKey($this->principalIdentity($principal, requirePersisted: false)));
-    }
-
-    /**
-     * Advance the shared catalog version after enum or role-map changes.
+     * Rotate the shared catalog version after synchronized data changes.
      */
     public function invalidateCatalog(): void
     {
-        if (! $this->enabled) {
-            return;
-        }
+        $this->memo = [];
 
-        $this->rotateVersion($this->catalogVersionKey());
-    }
-
-    /**
-     * Build a versioned cache key for an authorization decision.
-     */
-    protected function decisionKey(Model $principal, string $permission, AuthorizationScope $scope): string
-    {
-        $identity = $this->principalIdentity($principal);
-        $principalVersion = $this->version($this->principalVersionKey($identity));
-        $catalogVersion = $this->version($this->catalogVersionKey());
-        $digest = hash('sha256', $identity.'|'.$scope->key().'|'.$permission);
-
-        return "{$this->prefix}:decision:{$catalogVersion}:{$principalVersion}:{$digest}";
-    }
-
-    /**
-     * Build the cache version key for a principal identity.
-     */
-    protected function principalVersionKey(string $identity): string
-    {
-        return "{$this->prefix}:principal-version:".hash('sha256', $identity);
-    }
-
-    /**
-     * Get a stable identity for a persisted principal.
-     */
-    protected function principalIdentity(Model $principal, bool $requirePersisted = true): string
-    {
-        $key = $principal->getKey();
-
-        if ($key === null || ($requirePersisted && ! $principal->exists)) {
-            throw InvalidPrincipal::notPersisted($principal);
-        }
-
-        return $principal->getMorphClass().'|'.$key;
-    }
-
-    /**
-     * Get the shared catalog version cache key.
-     */
-    protected function catalogVersionKey(): string
-    {
-        return "{$this->prefix}:catalog-version";
-    }
-
-    /**
-     * Get the current version token for a cache key.
-     */
-    protected function version(string $key): string
-    {
-        $version = $this->repository()->get($key);
-
-        return is_string($version) ? $version : 'initial';
-    }
-
-    /**
-     * Atomically replace a cache version when caching is enabled.
-     */
-    protected function rotateVersion(string $key): void
-    {
-        if ($this->enabled) {
-            $this->repository()->put($key, bin2hex(random_bytes(16)), $this->versionTtl);
+        if (config('dominion.cache.enabled', true)) {
+            cache()->store(config('dominion.cache.store'))->put($this->prefix().':catalog-version', bin2hex(random_bytes(12)), (int) config('dominion.cache.version_ttl', 3600));
         }
     }
 
     /**
-     * Return the cache repository initialized for enabled caching.
+     * Build a decision key containing current principal and catalog versions.
      */
-    protected function repository(): Repository
+    private function key(Model $principal, AuthorizationScope $scope, string $permission): string
     {
-        if ($this->cache === null) {
-            throw new \LogicException('The Dominion cache repository is unavailable while caching is disabled.');
-        }
+        $repo = cache()->store(config('dominion.cache.store'));
+        $pv = config('dominion.cache.enabled', true) ? $repo->get($this->versionKey($principal), 'initial') : 'off';
+        $cv = config('dominion.cache.enabled', true) ? $repo->get($this->prefix().':catalog-version', 'initial') : 'off';
 
-        return $this->cache;
+        return $this->prefix().":decision:{$cv}:{$pv}:".hash('sha256', $principal->getMorphClass().'|'.$principal->getKey().'|'.$scope->key().'|'.$permission);
+    }
+
+    /**
+     * Build the persistent version key for one principal identity.
+     */
+    private function versionKey(Model $principal): string
+    {
+        return $this->prefix().':principal-version:'.hash('sha256', $principal->getMorphClass().'|'.$principal->getKey());
+    }
+
+    /**
+     * Return the configurable namespace used by every cache key.
+     */
+    private function prefix(): string
+    {
+        return (string) config('dominion.cache.prefix', 'dominion');
     }
 }

@@ -3,36 +3,23 @@
 namespace Infinity\Dominion\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Infinity\Dominion\Services\ModelRegistry;
-use Infinity\Dominion\Services\TableRegistry;
 
-/** @property string $name */
+/**
+ * Persists a synchronized permission value and its optional default effect.
+ *
+ * @property string $name
+ * @property 'allow'|'deny'|null $default_effect
+ */
 class Permission extends Model
 {
-    /**
-     * The attributes that are mass assignable.
-     */
-    protected $fillable = [
-        'name',
-    ];
+    /** @var list<string> */
+    protected $fillable = ['name', 'default_effect'];
 
+    /**
+     * Resolve the configurable permission table at runtime.
+     */
     public function getTable(): string
     {
-        return app(TableRegistry::class)->permissions();
-    }
-
-    /**
-     * Establishes a many-to-many relationship between the current model and the Role model.
-     *
-     * @return BelongsToMany The relationship instance to interact with the associated roles.
-     */
-    public function roles(): BelongsToMany
-    {
-        return $this->belongsToMany(
-            app(ModelRegistry::class)->roleModel(),
-            app(TableRegistry::class)->rolePermissions(),
-        )
-            ->withTimestamps();
+        return config('dominion.tables.permissions', 'dominion_permissions');
     }
 }
