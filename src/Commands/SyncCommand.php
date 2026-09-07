@@ -3,135 +3,108 @@
 namespace Infinity\Dominion\Commands;
 
 use Illuminate\Console\Command;
-use Infinity\Dominion\Contracts\AuthorizationCache;
-use Infinity\Dominion\Contracts\AuthorizationCatalog;
-use Infinity\Dominion\Events\CatalogSynchronized;
-use Infinity\Dominion\Services\DominionDatabase;
-use Infinity\Dominion\Services\ModelRegistry;
+use Illuminate\Support\Facades\DB;
+use Infinity\Dominion\Services\AuthorizationCache;
+use Infinity\Dominion\Services\Catalog;
+use InvalidArgumentException;
 
+/**
+ * Materialize the configured enum catalog, defaults, and role mappings.
+ */
 class SyncCommand extends Command
 {
-    /**
-     * The name and signature of the console command.
-     */
-    protected $signature = 'dominion:sync
-                            {--dry-run : Display changes without applying them}
-                            {--prune : Delete catalog entries absent from the configured enums}';
+    /** @var string */
+    protected $signature = 'dominion:sync {--dry-run} {--prune}';
+
+    /** @var string */
+    protected $description = 'Synchronize Dominion enums, defaults, and role permissions';
 
     /**
-     * The console command description.
+     * Synchronize configuration to the database as one atomic operation.
      */
-    protected $description = 'Synchronize Dominion roles, permissions, and role mappings from application enums';
+    public function handle(Catalog $catalog, AuthorizationCache $cache): int
+    {
+        $roles = $catalog->enumValues(config('dominion.enums.role'));
+        $permissions = [];
 
-    /**
-     * Execute the console command.
-     */
-    public function handle(
-        AuthorizationCatalog $catalog,
-        ModelRegistry $models,
-        AuthorizationCache $cache,
-        DominionDatabase $database,
-    ): int {
-        $snapshot = $catalog->snapshot();
-        $roles = $snapshot->roles;
-        $permissions = $snapshot->permissions;
-        $map = $snapshot->rolePermissions;
-        $prune = $this->option('prune') || (bool) config('dominion.catalog.prune', false);
-
-        if ($roles === [] && $permissions === [] && ! $prune) {
-            $this->warn('No Dominion role or permission enums are configured.');
-
-            return self::SUCCESS;
+        foreach (config('dominion.enums.permissions', []) as $enum) {
+            $permissions = [...$permissions, ...$catalog->enumValues($enum)];
         }
 
-        $this->displayPlan($roles, $permissions, $map);
+        if (count($permissions) !== count(array_unique($permissions))) {
+            throw new InvalidArgumentException('Permission enum values must be unique across the catalog.');
+        }
+
+        $allow = array_map($catalog->permission(...), config('dominion.defaults.allow', []));
+        $deny = array_map($catalog->permission(...), config('dominion.defaults.deny', []));
+
+        if (array_intersect($allow, $deny) !== []) {
+            throw new InvalidArgumentException('A permission cannot be both allowed and denied by default.');
+        }
+
+        $unknownDefaults = array_diff([...$allow, ...$deny], $permissions);
+
+        if ($unknownDefaults !== []) {
+            throw new InvalidArgumentException('Unknown default permission ['.reset($unknownDefaults).'].');
+        }
+
+        $this->line(sprintf('%s %d roles and %d permissions.', $this->option('dry-run') ? 'Would synchronize' : 'Synchronizing', count($roles), count($permissions)));
 
         if ($this->option('dry-run')) {
             return self::SUCCESS;
         }
 
-        $database->connection()->transaction(function () use ($roles, $permissions, $map, $models, $cache, $prune, $database): void {
-            $roleModel = $models->roleModel();
-            $permissionModel = $models->permissionModel();
-            $timestamp = now();
+        $roleClass = config('dominion.models.role');
+        $permissionClass = config('dominion.models.permission');
 
-            if ($roles !== []) {
-                $roleModel::query()->insertOrIgnore(array_map(
-                    fn (string $role): array => ['name' => $role, 'created_at' => $timestamp, 'updated_at' => $timestamp],
-                    $roles,
-                ));
+        // Catalog rows and their pivot mappings must become visible together.
+        DB::transaction(function () use ($roles, $permissions, $allow, $deny, $roleClass, $permissionClass, $catalog): void {
+            foreach ($roles as $name) {
+                $roleClass::query()->updateOrCreate(['name' => $name]);
             }
 
-            if ($permissions !== []) {
-                $permissionModel::query()->insertOrIgnore(array_map(
-                    fn (string $permission): array => ['name' => $permission, 'created_at' => $timestamp, 'updated_at' => $timestamp],
-                    $permissions,
-                ));
+            foreach ($permissions as $name) {
+                $permissionClass::query()->updateOrCreate(['name' => $name], ['default_effect' => in_array($name, $allow, true) ? 'allow' : (in_array($name, $deny, true) ? 'deny' : null)]);
             }
 
-            $roleIds = $roleModel::query()->whereIn('name', $roles)->pluck('id', 'name')->all();
-            $permissionIds = $permissionModel::query()->whereIn('name', $permissions)->pluck('id', 'name')->all();
-            $relation = (new $roleModel)->permissions();
-            $connection = $database->connection();
-            $pivot = $connection->table($relation->getTable());
-            $roleForeignKey = $relation->getForeignPivotKeyName();
-            $permissionForeignKey = $relation->getRelatedPivotKeyName();
-            $pivotRows = [];
+            if ($this->option('prune')) {
+                $roleClass::query()->when($roles !== [], fn ($q) => $q->whereNotIn('name', $roles))->when($roles === [], fn ($q) => $q)->delete();
+                $permissionClass::query()->when($permissions !== [], fn ($q) => $q->whereNotIn('name', $permissions))->when($permissions === [], fn ($q) => $q)->delete();
+            }
 
-            foreach ($roleIds as $roleName => $roleId) {
-                foreach ($map[$roleName] ?? [] as $permissionName) {
-                    $pivotRows[] = [
-                        $roleForeignKey => $roleId,
-                        $permissionForeignKey => $permissionIds[$permissionName],
-                        $relation->createdAt() => $timestamp,
-                        $relation->updatedAt() => $timestamp,
-                    ];
+            $roleIds = $roleClass::query()->pluck('id', 'name');
+            $permissionIds = $permissionClass::query()->pluck('id', 'name');
+            $pivot = config('dominion.tables.role_permissions');
+            $roleMap = config('dominion.roles', []);
+
+            // Validate map keys before clearing every synchronized role's pivot rows.
+            foreach (array_keys($roleMap) as $configuredRole) {
+                $configuredRole = $catalog->role($configuredRole);
+
+                if (! isset($roleIds[$configuredRole])) {
+                    throw new InvalidArgumentException("Unknown configured role [{$configuredRole}].");
                 }
             }
 
-            if ($roleIds !== []) {
-                $pivot->whereIn($roleForeignKey, array_values($roleIds))->delete();
-            }
+            foreach ($roles as $role) {
+                $mapped = $roleMap[$role] ?? [];
+                $values = in_array('*', $mapped, true) ? $permissions : array_map($catalog->permission(...), $mapped);
 
-            foreach (array_chunk($pivotRows, 500) as $pivotChunk) {
-                $pivot->insert($pivotChunk);
-            }
+                DB::table($pivot)->where('role_id', $roleIds[$role])->delete();
 
-            if ($prune) {
-                $roles === []
-                    ? $roleModel::query()->delete()
-                    : $roleModel::query()->whereNotIn('name', $roles)->delete();
-                $permissions === []
-                    ? $permissionModel::query()->delete()
-                    : $permissionModel::query()->whereNotIn('name', $permissions)->delete();
-            }
+                foreach ($values as $permission) {
+                    if (! isset($permissionIds[$permission])) {
+                        throw new InvalidArgumentException("Unknown configured permission [{$permission}].");
+                    }
 
-            $connection->afterCommit(function () use ($cache, $roles, $permissions, $map, $prune): void {
-                $cache->invalidateCatalog();
-                event(new CatalogSynchronized($roles, $permissions, $map, $prune));
-            });
+                    DB::table($pivot)->insert(['role_id' => $roleIds[$role], 'permission_id' => $permissionIds[$permission]]);
+                }
+            }
         });
 
+        $cache->invalidateCatalog();
         $this->info('Dominion catalog synchronized.');
 
         return self::SUCCESS;
-    }
-
-    /**
-     * Display the catalog synchronization summary.
-     *
-     * @param  list<string>  $roles
-     * @param  list<string>  $permissions
-     * @param  array<string, list<string>>  $map
-     */
-    protected function displayPlan(array $roles, array $permissions, array $map): void
-    {
-        $this->line(sprintf(
-            '%s %d roles, %d permissions, and %d role mappings.',
-            $this->option('dry-run') ? 'Would synchronize' : 'Synchronizing',
-            count($roles),
-            count($permissions),
-            count($map),
-        ));
     }
 }

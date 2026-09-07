@@ -4,225 +4,62 @@ namespace Infinity\Dominion;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
+use Infinity\Dominion\Commands\DoctorCommand;
 use Infinity\Dominion\Commands\SyncCommand;
-use Infinity\Dominion\Contracts\AuthorizationCache as AuthorizationCacheContract;
-use Infinity\Dominion\Contracts\AuthorizationCatalog;
-use Infinity\Dominion\Contracts\AuthorizationResolver;
+use Infinity\Dominion\Contracts\DominionManager as DominionManagerContract;
 use Infinity\Dominion\Contracts\DominionPrincipal;
-use Infinity\Dominion\Contracts\PermissionValueResolver;
-use Infinity\Dominion\Contracts\RoleValueResolver;
-use Infinity\Dominion\Contracts\TenantContext;
-use Infinity\Dominion\Domain\AuthorizationDecision;
 use Infinity\Dominion\Services\AuthorizationCache;
-use Infinity\Dominion\Services\ConfigurationValidator;
-use Infinity\Dominion\Services\DefaultAuthorizationResolver;
-use Infinity\Dominion\Services\DefaultPermissionValueResolver;
-use Infinity\Dominion\Services\DefaultRoleValueResolver;
-use Infinity\Dominion\Services\DefaultTenantContext;
-use Infinity\Dominion\Services\EnumAuthorizationCatalog;
-use RuntimeException;
+use Infinity\Dominion\Services\Catalog;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
+/**
+ * Registers Dominion's resources, services, commands, Gate, and policies.
+ */
 class DominionServiceProvider extends PackageServiceProvider
 {
     /**
-     * Configure the package resources and commands.
+     * Describe the publishable package resources and console commands.
      */
     public function configurePackage(Package $package): void
     {
-        $package
-            ->name('dominion')
-            ->hasConfigFile()
-            ->hasMigrations([
-                'create_dominion_tables',
-            ])
-            ->hasCommand(SyncCommand::class)
-            ->hasInstallCommand(function (InstallCommand $command): void {
-                $command
-                    ->publishConfigFile()
-                    ->publishMigrations();
-            });
+        $package->name('dominion')->hasConfigFile()->hasMigration('create_dominion_tables')
+            ->hasCommands([SyncCommand::class, DoctorCommand::class])
+            ->hasInstallCommand(fn (InstallCommand $command) => $command->publishConfigFile()->publishMigrations());
     }
 
     /**
-     * Registers package-specific singleton bindings in the application container.
-     *
-     * This method establishes singleton bindings for various service classes required by the package. For each service, it retrieves
-     * the fully qualified class name from the package's configuration file and binds it to the application container as a singleton.
-     * These bindings ensure that the same instance of each service is shared across the application.
+     * Bind the facade contract to the package's default manager.
      */
     public function packageRegistered(): void
     {
-        $this->bindConfiguredSingleton(TenantContext::class, 'tenant_context');
-        $this->bindConfiguredSingleton(PermissionValueResolver::class, 'permission_value_resolver');
-        $this->bindConfiguredSingleton(RoleValueResolver::class, 'role_value_resolver');
-        $this->bindConfiguredSingleton(AuthorizationCatalog::class, 'authorization_catalog');
-        $this->bindConfiguredSingleton(AuthorizationResolver::class, 'authorization_resolver');
-        $this->app->singleton(AuthorizationCacheContract::class, AuthorizationCache::class);
+        // Shared instances ensure command and facade invalidation clear the same memo.
+        $this->app->singleton(Catalog::class);
+        $this->app->singleton(AuthorizationCache::class);
+        $this->app->singleton(DominionManagerContract::class, DominionManager::class);
     }
 
     /**
-     * Executes tasks that should be performed after the service provider's package has been booted.
-     *
-     * This method ensures that the application's service layer is prepared by validating service implementations
-     * and registering the necessary authorization policies.
+     * Connect opted-in principals and configured policies to Laravel's Gate.
      */
     public function packageBooted(): void
     {
-        $this->validateServiceImplementations();
-        app(ConfigurationValidator::class)->validatePolicy();
+        if (config('dominion.gate.enabled', true)) {
+            Gate::before(function ($user, string $ability): ?bool {
+                // Returning null leaves non-Dominion principals to Laravel's other gates.
+                if (! $user instanceof Model || (! $user instanceof DominionPrincipal && ! method_exists($user, 'dominionAuthorized'))) {
+                    return null;
+                }
 
-        if (config('dominion.policy.enabled', true) === true) {
-            $this->registerPolicies();
+                return app(DominionManagerContract::class)->for($user)->globally()->isAllowed($ability);
+            });
         }
 
-        if ((bool) config('dominion.gate.enabled', true)) {
-            $this->registerGateBefore();
-        }
-    }
-
-    /**
-     * Registers a "before" callback for the authorization gate to intercept permission checks.
-     *
-     * Dominion principals are denied unless the requested permission is explicitly allowed.
-     * Standard resource abilities are delegated to the configured policy so that it
-     * can translate abilities such as `update` into catalog permissions.
-     */
-    protected function registerGateBefore(): void
-    {
-        Gate::before(function (mixed $user, string $ability, array $arguments = []): ?bool {
-            if (! $user instanceof Model || ! $user instanceof DominionPrincipal) {
-                return null;
-            }
-
-            if ($this->delegatesToConfiguredPolicy($ability, $arguments)) {
-                return null;
-            }
-
-            $decision = app(AuthorizationResolver::class)->decide(
-                $user,
-                $ability,
-                app(TenantContext::class)->currentScope(),
-            );
-
-            return $decision === AuthorizationDecision::Allow;
-        });
-    }
-
-    /**
-     * Determine whether a standard resource ability belongs to a configured policy.
-     *
-     * @param  array<int, mixed>  $arguments
-     */
-    protected function delegatesToConfiguredPolicy(string $ability, array $arguments): bool
-    {
-        if (str_contains($ability, '.') || $arguments === [] || ! (bool) config('dominion.policy.enabled', true)) {
-            return false;
-        }
-
-        $resource = $arguments[0];
-        $resourceClass = $resource instanceof Model ? $resource::class : $resource;
-
-        if (! is_string($resourceClass) || ! is_a($resourceClass, Model::class, true)) {
-            return false;
-        }
-
-        foreach (config('dominion.policy.models', []) as $model => $configuredPolicy) {
-            $modelClass = is_int($model) ? $configuredPolicy : $model;
-
-            if (is_string($modelClass) && is_a($resourceClass, $modelClass, true)) {
-                return true;
+        if (config('dominion.policy.enabled', true)) {
+            foreach (config('dominion.policy.models', []) as $model => $policy) {
+                Gate::policy($model, $policy);
             }
         }
-
-        return false;
-    }
-
-    /**
-     * Registers policies for the specified models using the configured policy class.
-     *
-     * This method retrieves the policy class and the list of models from the configuration.
-     * It then associates the policy class with each model in the list by registering it with the authorization Gate.
-     */
-    protected function registerPolicies(): void
-    {
-        $policyClass = config('dominion.policy.class');
-        $models = config('dominion.policy.models', []);
-
-        foreach ($models as $model => $configuredPolicy) {
-            if (is_int($model)) {
-                Gate::policy($configuredPolicy, $policyClass);
-
-                continue;
-            }
-
-            $policy = is_array($configuredPolicy) ? ($configuredPolicy['policy'] ?? $policyClass) : $configuredPolicy;
-            Gate::policy($model, $policy);
-        }
-    }
-
-    /**
-     * Validates that the configured service implementations conform to their respective contract interfaces.
-     *
-     * This method iterates through a predefined list of service contract-to-configuration key mappings. For each mapping,
-     * it resolves the service instance from the application container and checks if it implements the expected contract.
-     * If a service does not implement its contract, an exception is thrown indicating the misconfiguration.
-     *
-     * @throws RuntimeException if a service does not implement its contract
-     */
-    protected function validateServiceImplementations(): void
-    {
-        $services = [
-            TenantContext::class => 'tenant_context',
-            PermissionValueResolver::class => 'permission_value_resolver',
-            RoleValueResolver::class => 'role_value_resolver',
-            AuthorizationResolver::class => 'authorization_resolver',
-            AuthorizationCatalog::class => 'authorization_catalog',
-        ];
-
-        foreach ($services as $contract => $configKey) {
-            $implementation = config("dominion.services.{$configKey}", $this->defaultService($configKey));
-
-            if (! is_string($implementation) || ! is_a($implementation, $contract, true)) {
-                throw new RuntimeException("The configured service for 'dominion.services.{$configKey}' must implement {$contract}.");
-            }
-        }
-    }
-
-    /**
-     * Bind a configured service implementation as a singleton.
-     *
-     * @param  class-string  $contract
-     */
-    protected function bindConfiguredSingleton(string $contract, string $configKey): void
-    {
-        $this->app->singleton($contract, function ($app) use ($configKey): object {
-            $class = config("dominion.services.{$configKey}", $this->defaultService($configKey));
-
-            if (! is_string($class)) {
-                throw new RuntimeException("The configured Dominion service [{$configKey}] must be a class name.");
-            }
-
-            return $app->make($class);
-        });
-    }
-
-    /**
-     * Get the default implementation for a service configuration key.
-     *
-     * @return class-string
-     */
-    protected function defaultService(string $configKey): string
-    {
-        return match ($configKey) {
-            'tenant_context' => DefaultTenantContext::class,
-            'permission_value_resolver' => DefaultPermissionValueResolver::class,
-            'role_value_resolver' => DefaultRoleValueResolver::class,
-            'authorization_catalog' => EnumAuthorizationCatalog::class,
-            'authorization_resolver' => DefaultAuthorizationResolver::class,
-            default => throw new RuntimeException("Unknown Dominion service [{$configKey}]."),
-        };
     }
 }

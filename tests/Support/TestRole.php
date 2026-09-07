@@ -2,9 +2,8 @@
 
 namespace Tests\Support;
 
-enum TestRole
+enum TestRole: string
 {
-    case ADMIN;
-
-    case EDITOR;
+    case Admin = 'admin';
+    case Member = 'member';
 }

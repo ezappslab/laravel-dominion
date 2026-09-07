@@ -6,7 +6,6 @@ Thank you for contributing to Laravel Dominion. This guide describes the local d
 
 - PHP 8.4 or newer
 - Composer 2
-- SQLite support for PHP
 
 Dominion supports Laravel 12 and 13. Composer resolves the compatible framework and Testbench versions for the dependency set being tested.
 

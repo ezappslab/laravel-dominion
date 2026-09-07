@@ -2,7 +2,7 @@
 
 namespace Infinity\Dominion\Contracts;
 
-interface DominionPrincipal
-{
-    // Marker contract for models whose abilities are managed by Dominion.
-}
+/**
+ * Marks an authenticated model as authoritative under Dominion's Gate hook.
+ */
+interface DominionPrincipal {}

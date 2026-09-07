@@ -5,18 +5,18 @@ namespace Infinity\Dominion\Domain;
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
 
+/**
+ * Identifies either the shared global scope or one persisted tenant scope.
+ */
 final readonly class AuthorizationScope
 {
     /**
-     * Create a new authorization scope instance.
+     * Restrict construction to validated named constructors.
      */
-    private function __construct(
-        public ?string $tenantType,
-        public ?string $tenantId,
-    ) {}
+    private function __construct(public ?string $tenantType, public ?string $tenantId) {}
 
     /**
-     * Create a scope that is shared across every tenant.
+     * Create the scope inherited by every tenant.
      */
     public static function global(): self
     {
@@ -24,29 +24,25 @@ final readonly class AuthorizationScope
     }
 
     /**
-     * Create a tenant scope from a model, identifier, or morph type and ID.
+     * Create a scope for a persisted instance of the configured tenant model.
      */
-    public static function tenant(Model|string|int $tenant, string|int|null $id = null): self
+    public static function tenant(Model $tenant): self
     {
-        if ($tenant instanceof Model) {
-            $tenantId = $tenant->getKey();
-
-            if ($tenantId === null) {
-                throw new InvalidArgumentException('A tenant model must exist before it can be used as an authorization scope.');
-            }
-
-            return new self($tenant->getMorphClass(), (string) $tenantId);
+        if (! $tenant->exists || $tenant->getKey() === null) {
+            throw new InvalidArgumentException('The tenant must be persisted.');
         }
 
-        if ($id !== null) {
-            return new self((string) $tenant, (string) $id);
+        $configured = config('dominion.tenant.model');
+
+        if (is_string($configured) && ! $tenant instanceof $configured) {
+            throw new InvalidArgumentException("Tenant must be an instance of [{$configured}].");
         }
 
-        return new self((string) config('dominion.tenancy.tenant_type', 'tenant'), (string) $tenant);
+        return new self($tenant->getMorphClass(), (string) $tenant->getKey());
     }
 
     /**
-     * Determine whether this scope represents a global assignment.
+     * Determine whether this scope has no tenant boundary.
      */
     public function isGlobal(): bool
     {
@@ -54,14 +50,10 @@ final readonly class AuthorizationScope
     }
 
     /**
-     * Return the stable database and cache key for this scope.
+     * Return the stable value stored in assignments and cache keys.
      */
     public function key(): string
     {
-        if ($this->isGlobal()) {
-            return 'global';
-        }
-
-        return hash('sha256', $this->tenantType.'|'.$this->tenantId);
+        return $this->isGlobal() ? 'global' : hash('sha256', $this->tenantType.'|'.$this->tenantId);
     }
 }
