@@ -112,6 +112,27 @@ it('applies permission precedence in the global query scope', function (): void 
     expect(Principal::query()->withPermission(TestPermission::View)->pluck('id')->all())->toBe([$allowed->getKey()]);
 });
 
+it('keeps permission scopes equivalent to facade decisions across the precedence matrix', function (): void {
+    $tenant = Tenant::query()->create(['name' => 'Acme']);
+    $principals = collect(range(1, 6))->map(fn () => Principal::query()->create());
+
+    Dominion::for($principals[0])->globally()->deny(TestPermission::View);
+    Dominion::for($principals[0])->in($tenant)->allow(TestPermission::View);
+    Dominion::for($principals[1])->globally()->allow(TestPermission::View);
+    Dominion::for($principals[1])->in($tenant)->deny(TestPermission::View);
+    Dominion::for($principals[2])->in($tenant)->grant(TestRole::Member);
+    Dominion::for($principals[2])->globally()->deny(TestPermission::View);
+    Dominion::for($principals[3])->in($tenant)->grant(TestRole::Member);
+    Dominion::for($principals[4])->globally()->grant(TestRole::Member);
+
+    $expected = $principals
+        ->filter(fn (Principal $principal): bool => Dominion::for($principal)->in($tenant)->isAllowed(TestPermission::View))
+        ->pluck('id')
+        ->all();
+
+    expect(Principal::query()->withPermission(TestPermission::View, $tenant)->pluck('id')->all())->toBe($expected);
+});
+
 it('exposes role and direct permission relationships from their concern traits', function (): void {
     $user = Principal::query()->create();
     Dominion::for($user)->globally()->grant(TestRole::Member);

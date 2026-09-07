@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Infinity\Dominion\Domain\AuthorizationScope;
 use Infinity\Dominion\Facades\Dominion;
+use Infinity\Dominion\Models\Assignment;
 use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\PendingAuthorization;
 use Infinity\Dominion\Services\Catalog;
@@ -21,7 +22,14 @@ trait HasPermissions
      */
     public function permissions(): MorphToMany
     {
-        return $this->permissionRelationship();
+        return $this->morphToMany(
+            config('dominion.models.permission', Permission::class),
+            'principal',
+            config('dominion.tables.assignments', 'dominion_assignments'),
+            'principal_id',
+            'permission_id',
+        )->withPivot(['tenant_type', 'tenant_id', 'scope_key', 'effect'])
+            ->withTimestamps();
     }
 
     /**
@@ -29,7 +37,7 @@ trait HasPermissions
      */
     public function allowedPermissions(): MorphToMany
     {
-        return $this->permissionRelationship('allow');
+        return $this->permissions()->wherePivot('effect', Assignment::EFFECT_ALLOW);
     }
 
     /**
@@ -37,7 +45,7 @@ trait HasPermissions
      */
     public function deniedPermissions(): MorphToMany
     {
-        return $this->permissionRelationship('deny');
+        return $this->permissions()->wherePivot('effect', Assignment::EFFECT_DENY);
     }
 
     /**
@@ -110,55 +118,107 @@ trait HasPermissions
     public function scopeWithPermission(Builder $query, mixed $permission, ?Model $tenant = null): Builder
     {
         $name = app(Catalog::class)->permission($permission);
-
         $model = $query->getModel();
-        $type = $model->getMorphClass();
-        $key = $model->getConnection()->getQueryGrammar()->wrap($model->qualifyColumn($model->getKeyName()));
-        $assignments = config('dominion.tables.assignments', 'dominion_assignments');
-        $permissions = config('dominion.tables.permissions', 'dominion_permissions');
-        $rolePermissions = config('dominion.tables.role_permissions', 'dominion_role_permissions');
+        $principalKey = $model->qualifyColumn($model->getKeyName());
         $global = AuthorizationScope::global()->key();
         $tenantKey = $tenant ? AuthorizationScope::tenant($tenant)->key() : null;
 
-        // Correlated EXISTS clauses avoid loading principals while preserving precedence.
-        $direct = "select 1 from {$assignments} a join {$permissions} p on p.id = a.permission_id where a.principal_type = ? and a.principal_id = {$key} and a.scope_key = ? and p.name = ?";
-        $directAllow = $direct." and a.effect = 'allow'";
-        $role = "select 1 from {$assignments} a join {$rolePermissions} rp on rp.role_id = a.role_id join {$permissions} p on p.id = rp.permission_id where a.principal_type = ? and a.principal_id = {$key} and a.scope_key = ? and p.name = ?";
-        $default = "exists (select 1 from {$permissions} p where p.name = ? and p.default_effect = 'allow')";
-
         if ($tenantKey === null) {
-            $sql = "exists ({$directAllow}) or (not exists ({$direct}) and (exists ({$role}) or {$default}))";
-
-            return $query->whereRaw($sql, [$type, $global, $name, $type, $global, $name, $type, $global, $name, $name]);
+            return $query->where(function (Builder $decision) use ($model, $principalKey, $global, $name): void {
+                $decision->whereExists($this->directPermissionQuery($model, $principalKey, $global, $name, Assignment::EFFECT_ALLOW))
+                    ->orWhere(function (Builder $fallback) use ($model, $principalKey, $global, $name): void {
+                        $fallback->whereNotExists($this->directPermissionQuery($model, $principalKey, $global, $name))
+                            ->where(function (Builder $inherited) use ($model, $principalKey, $global, $name): void {
+                                $inherited->whereExists($this->rolePermissionQuery($model, $principalKey, $global, $name))
+                                    ->orWhereExists($this->defaultPermissionQuery($name));
+                            });
+                    });
+            });
         }
 
-        $sql = "exists ({$directAllow})
-            or (not exists ({$direct}) and exists ({$directAllow}))
-            or (not exists ({$direct}) and not exists ({$direct}) and (exists ({$role}) or exists ({$role}) or {$default}))";
-
-        return $query->whereRaw($sql, [
-            $type, $tenantKey, $name,
-            $type, $tenantKey, $name, $type, $global, $name,
-            $type, $tenantKey, $name, $type, $global, $name,
-            $type, $tenantKey, $name, $type, $global, $name, $name,
-        ]);
+        return $query->where(function (Builder $decision) use ($model, $principalKey, $tenantKey, $global, $name): void {
+            $decision->whereExists($this->directPermissionQuery($model, $principalKey, $tenantKey, $name, Assignment::EFFECT_ALLOW))
+                ->orWhere(function (Builder $globalDirect) use ($model, $principalKey, $tenantKey, $global, $name): void {
+                    $globalDirect->whereNotExists($this->directPermissionQuery($model, $principalKey, $tenantKey, $name))
+                        ->whereExists($this->directPermissionQuery($model, $principalKey, $global, $name, Assignment::EFFECT_ALLOW));
+                })
+                ->orWhere(function (Builder $inherited) use ($model, $principalKey, $tenantKey, $global, $name): void {
+                    $inherited->whereNotExists($this->directPermissionQuery($model, $principalKey, $tenantKey, $name))
+                        ->whereNotExists($this->directPermissionQuery($model, $principalKey, $global, $name))
+                        ->where(function (Builder $rolesOrDefault) use ($model, $principalKey, $tenantKey, $global, $name): void {
+                            $rolesOrDefault->whereExists($this->rolePermissionQuery($model, $principalKey, $tenantKey, $name))
+                                ->orWhereExists($this->rolePermissionQuery($model, $principalKey, $global, $name))
+                                ->orWhereExists($this->defaultPermissionQuery($name));
+                        });
+                });
+        });
     }
 
     /**
-     * Build the direct permission relationship for one stored effect.
+     * Build a correlated direct-assignment subquery without loading models.
      */
-    private function permissionRelationship(?string $effect = null): MorphToMany
+    private function directPermissionQuery(Model $principal, string $principalKey, string $scopeKey, string $permission, ?string $effect = null): Builder
     {
-        $relationship = $this->morphToMany(
-            config('dominion.models.permission', Permission::class),
-            'principal',
-            config('dominion.tables.assignments', 'dominion_assignments'),
-            'principal_id',
-            'permission_id',
-        )->withPivot(['tenant_type', 'tenant_id', 'scope_key', 'effect'])
-            ->withTimestamps();
+        $assignment = $this->newAssignmentQuery();
+        $assignmentTable = $assignment->getModel()->getTable();
+        $permissionTable = $this->permissionTable();
 
-        return $effect === null ? $relationship : $relationship->wherePivot('effect', $effect);
+        return $assignment->selectRaw('1')
+            ->join($permissionTable, "{$permissionTable}.id", '=', "{$assignmentTable}.permission_id")
+            ->where("{$assignmentTable}.principal_type", $principal->getMorphClass())
+            ->whereColumn("{$assignmentTable}.principal_id", $principalKey)
+            ->where("{$assignmentTable}.scope_key", $scopeKey)
+            ->where("{$permissionTable}.name", $permission)
+            ->when($effect !== null, fn (Builder $query) => $query->where("{$assignmentTable}.effect", $effect));
+    }
+
+    /**
+     * Build a correlated role-derived permission subquery without loading models.
+     */
+    private function rolePermissionQuery(Model $principal, string $principalKey, string $scopeKey, string $permission): Builder
+    {
+        $assignment = $this->newAssignmentQuery();
+        $assignmentTable = $assignment->getModel()->getTable();
+        $permissionTable = $this->permissionTable();
+        $pivotTable = config('dominion.tables.role_permissions', 'dominion_role_permissions');
+
+        return $assignment->selectRaw('1')
+            ->join($pivotTable, "{$pivotTable}.role_id", '=', "{$assignmentTable}.role_id")
+            ->join($permissionTable, "{$permissionTable}.id", '=', "{$pivotTable}.permission_id")
+            ->where("{$assignmentTable}.principal_type", $principal->getMorphClass())
+            ->whereColumn("{$assignmentTable}.principal_id", $principalKey)
+            ->where("{$assignmentTable}.scope_key", $scopeKey)
+            ->where("{$permissionTable}.name", $permission);
+    }
+
+    /**
+     * Build the materialized default-allow permission subquery.
+     */
+    private function defaultPermissionQuery(string $permission): Builder
+    {
+        $class = config('dominion.models.permission', Permission::class);
+
+        return $class::query()->selectRaw('1')->where('name', $permission)->where('default_effect', Assignment::EFFECT_ALLOW);
+    }
+
+    /**
+     * Start a query using the configured assignment model.
+     */
+    private function newAssignmentQuery(): Builder
+    {
+        $class = config('dominion.models.assignment', Assignment::class);
+
+        return $class::query();
+    }
+
+    /**
+     * Return the table used by the configured permission model.
+     */
+    private function permissionTable(): string
+    {
+        $class = config('dominion.models.permission', Permission::class);
+
+        return (new $class)->getTable();
     }
 
     /**
