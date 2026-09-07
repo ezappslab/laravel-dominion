@@ -1,141 +1,145 @@
 <?php
 
+use Infinity\Dominion\Models\Assignment;
 use Infinity\Dominion\Models\Permission;
 use Infinity\Dominion\Models\Role;
-use Infinity\Dominion\Policies\DefaultPolicy;
-use Infinity\Dominion\Services\DefaultAuthorizationResolver;
-use Infinity\Dominion\Services\DefaultPermissionValueResolver;
-use Infinity\Dominion\Services\DefaultRoleValueResolver;
-use Infinity\Dominion\Services\DefaultTenantContext;
-use Infinity\Dominion\Services\EnumAuthorizationCatalog;
 
 return [
 
     /*
     |--------------------------------------------------------------------------
-    | Authorization Catalog
+    | Authorization Enums
     |--------------------------------------------------------------------------
     |
-    | Define the application enums that represent your roles and permissions.
-    | Role mappings are synchronized to the database by `dominion:sync`; use
-    | an asterisk to grant a role every configured permission.
+    | The application owns the backed enums that define Dominion's catalog.
+    | A single role enum and any number of permission enums may be supplied.
+    | Permission values must be unique across every configured enum.
     |
     */
 
-    'catalog' => [
-        // The enum class containing every role managed by Dominion.
-        'role_enum' => null,
+    'enums' => [
+        // Backed enum class containing every role managed by Dominion.
+        'role' => null,
 
-        // One or more enum classes containing application permissions.
-        'permission_enums' => [],
-
-        // Maps role values to permission values; `*` grants the full catalog.
-        'role_permissions' => [],
-
-        // Remove database catalog entries that no longer exist in the enums.
-        'prune' => false,
+        // Backed enum classes whose combined cases form the permission catalog.
+        'permissions' => [],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Tenant Model
+    |--------------------------------------------------------------------------
+    |
+    | Set the application model accepted by the facade's in() method. Global
+    | assignments remain available through globally() and are inherited by
+    | tenant checks according to Dominion's specificity rules.
+    |
+    */
+
+    'tenant' => [
+        // Eloquent model class accepted as the tenant for scoped assignments.
+        'model' => null,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Role Permissions
+    |--------------------------------------------------------------------------
+    |
+    | Map role enum values to permission enum cases or values. The wildcard
+    | grants every configured permission to that role during synchronization.
+    |
+    */
+
+    'roles' => [],
 
     /*
     |--------------------------------------------------------------------------
     | Assignment Profiles
     |--------------------------------------------------------------------------
     |
-    | Profiles are reusable sets of roles, permissions, and denials that may
-    | be applied when creating a principal or provisioning a tenant member.
+    | Profiles are configuration recipes, not persisted models. Each profile
+    | may contain "roles", "allow", and "deny" arrays and is applied within
+    | one transaction by the facade.
     |
     */
 
-    // Each profile may contain `roles`, `permissions`, and `denials` arrays.
     'profiles' => [],
 
     /*
     |--------------------------------------------------------------------------
-    | Dominion Models
+    | Permission Defaults
     |--------------------------------------------------------------------------
     |
-    | You may replace the package models with application models. Custom
-    | models must extend their corresponding Dominion model class.
+    | These effects are materialized on permission catalog rows by sync. The
+    | same permission cannot appear in both lists. With no applicable direct,
+    | role, or default decision, Dominion always denies access.
+    |
+    */
+
+    'defaults' => [
+        // Permissions allowed when no direct or role-derived decision applies.
+        'allow' => [],
+
+        // Permissions explicitly denied at the catalog-default precedence level.
+        'deny' => [],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Models and Tables
+    |--------------------------------------------------------------------------
+    |
+    | Custom catalog models may be supplied when they extend the corresponding
+    | Dominion model. Configure table names before publishing the migration.
     |
     */
 
     'models' => [
-        // The Eloquent model used to persist synchronized roles.
+        // Eloquent model used for unified global and tenant assignments.
+        'assignment' => Assignment::class,
+
+        // Eloquent model used to persist synchronized roles.
         'role' => Role::class,
 
-        // The Eloquent model used to persist synchronized permissions.
+        // Eloquent model used to persist synchronized permissions and defaults.
         'permission' => Permission::class,
     ],
 
-    /*
-    |--------------------------------------------------------------------------
-    | Database Tables
-    |--------------------------------------------------------------------------
-    |
-    | Customize these names before publishing and running the migrations.
-    |
-    */
-
     'tables' => [
-        'roles' => 'roles',
-        'permissions' => 'permissions',
-        'role_permissions' => 'permission_role',
-        'role_assignments' => 'role_assignments',
-        'permission_grants' => 'permission_grants',
-        'permission_denials' => 'permission_denials',
+        // Catalog table containing normalized role values.
+        'roles' => 'dominion_roles',
+
+        // Catalog table containing permission values and materialized defaults.
+        'permissions' => 'dominion_permissions',
+
+        // Pivot table containing synchronized role-to-permission mappings.
+        'role_permissions' => 'dominion_role_permissions',
+
+        // Unified table containing global and tenant-scoped assignments.
+        'assignments' => 'dominion_assignments',
     ],
 
     /*
     |--------------------------------------------------------------------------
-    | Tenancy
+    | Laravel Authorization Integration
     |--------------------------------------------------------------------------
     |
-    | Global assignments are inherited by tenant scopes by default. Disable
-    | this option when every tenant must have completely isolated access.
-    |
-    */
-
-    'tenancy' => [
-        // The morph type used when a scalar tenant identifier is supplied.
-        'tenant_type' => 'tenant',
-
-        // Makes global roles and grants available inside tenant scopes.
-        'global_inherits_into_tenant' => true,
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Gate Integration
-    |--------------------------------------------------------------------------
-    |
-    | Dominion is authoritative for models implementing DominionPrincipal. Any
-    | ability that does not resolve to an explicit allow is denied by default.
+    | Gate integration controls the global Gate callback. Policy mappings use model
+    | class names as keys and their application policy classes as values.
     |
     */
 
     'gate' => [
-        // Registers Dominion's callback with Laravel's authorization Gate.
+        // Register Dominion's callback with Laravel's authorization Gate.
         'enabled' => true,
     ],
 
-    /*
-    |--------------------------------------------------------------------------
-    | Default Policy
-    |--------------------------------------------------------------------------
-    |
-    | The default policy converts model abilities to `{table}.{ability}`. List
-    | models here or provide explicit model-to-policy mappings as needed.
-    |
-    */
-
     'policy' => [
-        // Enables automatic registration of the configured model policies.
+        // Register the explicit model-to-policy mappings below.
         'enabled' => true,
 
-        // The policy used for numeric entries in the models array below.
-        'class' => DefaultPolicy::class,
-
-        // Models using the default policy or explicit model-to-policy mappings.
+        // Map application model classes to their corresponding policy classes.
         'models' => [],
     ],
 
@@ -144,52 +148,26 @@ return [
     | Authorization Cache
     |--------------------------------------------------------------------------
     |
-    | Dominion caches computed decisions while the database remains the source
-    | of truth. A null store uses the application's default cache store.
+    | Final decisions use request memoization and optionally Laravel's cache.
+    | Version tokens invalidate only Dominion decisions for a principal or
+    | catalog and must live longer than the cached decisions themselves.
     |
     */
 
     'cache' => [
-        // Enables caching of resolved authorization decisions.
+        // Cache resolved decisions in addition to request-level memoization.
         'enabled' => true,
 
-        // A Laravel cache store name; null uses the application's default.
+        // Laravel cache store name; null selects the application's default store.
         'store' => null,
 
-        // The number of seconds a computed decision remains cached.
+        // Number of seconds for which a resolved decision remains cached.
         'ttl' => 300,
 
-        // Version tokens must outlive decisions so stale keys cannot reappear.
+        // Lifetime of invalidation tokens; this must exceed the decision TTL.
         'version_ttl' => 3600,
 
-        // Prefixes Dominion keys to avoid collisions with application data.
+        // Namespace applied to every cache key created by Dominion.
         'prefix' => 'dominion',
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Service Implementations
-    |--------------------------------------------------------------------------
-    |
-    | These services are resolved through Laravel's container and may be
-    | replaced by application implementations of the matching contracts.
-    |
-    */
-
-    'services' => [
-        // Resolves the global or tenant scope for the current execution context.
-        'tenant_context' => DefaultTenantContext::class,
-
-        // Normalizes enum, model, and scalar permission values.
-        'permission_value_resolver' => DefaultPermissionValueResolver::class,
-
-        // Normalizes enum, model, and scalar role values.
-        'role_value_resolver' => DefaultRoleValueResolver::class,
-
-        // Reads configured enums and builds the role-permission catalog.
-        'authorization_catalog' => EnumAuthorizationCatalog::class,
-
-        // Evaluates denials, direct grants, and role-derived permissions.
-        'authorization_resolver' => DefaultAuthorizationResolver::class,
     ],
 ];

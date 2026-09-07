@@ -4,7 +4,7 @@ namespace Tests\Support;
 
 enum TestPermission: string
 {
-    case CREATE = 'posts.create';
-
-    case UPDATE = 'posts.update';
+    case View = 'documents.view';
+    case Update = 'documents.update';
+    case Delete = 'documents.delete';
 }
